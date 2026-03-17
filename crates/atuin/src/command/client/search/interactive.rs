@@ -148,6 +148,10 @@ struct StyleState {
 }
 
 impl State {
+    async fn preload_engine(&mut self, db: &dyn Database) -> Result<bool> {
+        self.engine.preload(db).await
+    }
+
     async fn query_results(
         &mut self,
         db: &mut dyn Database,
@@ -1732,6 +1736,7 @@ pub async fn history(
     };
 
     app.initialize_keymap_cursor(settings);
+    let _ = app.preload_engine(&db).await?;
 
     let mut results = app.query_results(&mut db, settings.smart_sort).await?;
 
@@ -1743,6 +1748,8 @@ pub async fn history(
     let mut inspecting: Option<History> = None;
     let accept;
     let result = 'render: loop {
+        let preload_completed = app.preload_engine(&db).await?;
+
         terminal.draw(|f| {
             app.draw(
                 f,
@@ -1824,10 +1831,16 @@ pub async fn history(
             }
         }
 
-        if initial_input != app.search.input.as_str()
-            || initial_filter_mode != app.search.filter_mode
-            || initial_search_mode != app.search_mode
-            || initial_custom_context != app.search.custom_context
+        let input_changed = initial_input != app.search.input.as_str();
+        let filter_changed = initial_filter_mode != app.search.filter_mode;
+        let search_mode_changed = initial_search_mode != app.search_mode;
+        let context_changed = initial_custom_context != app.search.custom_context;
+        let has_query = !app.search.input.as_str().is_empty();
+        let loading_query_index = has_query && app.engine.is_loading();
+
+        if ((input_changed || filter_changed || search_mode_changed || context_changed)
+            && !loading_query_index)
+            || (preload_completed && has_query)
         {
             results = app.query_results(&mut db, settings.smart_sort).await?;
         }

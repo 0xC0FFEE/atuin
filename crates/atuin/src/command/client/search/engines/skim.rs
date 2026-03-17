@@ -6,6 +6,7 @@ use eyre::Result;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use time::OffsetDateTime;
+use tokio::task::JoinHandle;
 use tokio::task::yield_now;
 use tracing::{Level, instrument, warn};
 use uuid;
@@ -14,6 +15,7 @@ use super::{SearchEngine, SearchState};
 
 pub struct Search {
     all_history: Vec<(History, i32)>,
+    preload: Option<JoinHandle<Vec<(History, i32)>>>,
     engine: SkimMatcherV2,
 }
 
@@ -21,21 +23,69 @@ impl Search {
     pub fn new() -> Self {
         Search {
             all_history: vec![],
+            preload: None,
             engine: SkimMatcherV2::default(),
         }
+    }
+
+    fn start_preload(&mut self, db: &dyn Database) {
+        if !self.all_history.is_empty() || self.preload.is_some() {
+            return;
+        }
+
+        let db = db.clone_boxed();
+        self.preload = Some(tokio::task::spawn_blocking(move || {
+            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return Vec::new();
+            };
+
+            runtime.block_on(async move { db.all_with_count().await.unwrap_or_default() })
+        }));
+    }
+
+    async fn harvest_preload_if_ready(&mut self) -> bool {
+        let Some(preload) = self.preload.as_ref() else {
+            return false;
+        };
+
+        if !preload.is_finished() {
+            return false;
+        }
+
+        let Some(preload) = self.preload.take() else {
+            return false;
+        };
+
+        if let Ok(all_history) = preload.await {
+            self.all_history = all_history;
+            return true;
+        }
+
+        false
     }
 }
 
 #[async_trait]
 impl SearchEngine for Search {
+    async fn preload(&mut self, db: &dyn Database) -> Result<bool> {
+        self.start_preload(db);
+        Ok(self.harvest_preload_if_ready().await)
+    }
+
     #[instrument(skip_all, level = Level::TRACE, name = "skim_search", fields(query = %state.input.as_str()))]
     async fn full_query(
         &mut self,
         state: &SearchState,
         db: &mut dyn Database,
     ) -> Result<Vec<History>> {
+        self.harvest_preload_if_ready().await;
+
         if self.all_history.is_empty() {
-            self.all_history = load_all_history(db).await;
+            self.start_preload(db);
+            return Ok(Vec::new());
         }
 
         Ok(fuzzy_search(&self.engine, state, &self.all_history).await)
@@ -49,11 +99,10 @@ impl SearchEngine for Search {
             .unwrap_or_default();
         indices
     }
-}
 
-#[instrument(skip_all, level = Level::TRACE, name = "load_all_history")]
-async fn load_all_history(db: &dyn Database) -> Vec<(History, i32)> {
-    db.all_with_count().await.unwrap()
+    fn is_loading(&self) -> bool {
+        self.all_history.is_empty() && self.preload.is_some()
+    }
 }
 
 #[allow(clippy::too_many_lines)]

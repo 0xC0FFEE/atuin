@@ -56,11 +56,19 @@ impl SearchState {
 
 #[async_trait]
 pub trait SearchEngine: Send + Sync + 'static {
+    async fn preload(&mut self, _db: &dyn Database) -> Result<bool> {
+        Ok(false)
+    }
+
     async fn full_query(
         &mut self,
         state: &SearchState,
         db: &mut dyn Database,
     ) -> Result<Vec<History>>;
+
+    fn is_loading(&self) -> bool {
+        false
+    }
 
     async fn query(&mut self, state: &SearchState, db: &mut dyn Database) -> Result<Vec<History>> {
         if state.input.as_str().is_empty() {
