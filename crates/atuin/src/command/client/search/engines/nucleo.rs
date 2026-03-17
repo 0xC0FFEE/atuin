@@ -6,6 +6,7 @@ use atuin_client::{
     history::History,
     settings::{FilterMode, Settings},
 };
+use atuin_nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use atuin_nucleo_matcher::{Config, Matcher, Utf32Str};
 use eyre::Result;
 use itertools::Itertools;
@@ -130,17 +131,18 @@ impl SearchEngine for Search {
     #[instrument(skip_all, level = Level::TRACE, name = "nucleo_highlight")]
     fn get_highlight_indices(&self, command: &str, search_input: &str) -> Vec<usize> {
         let mut indices = Vec::new();
-        let mut query_buf = Vec::new();
-        let query = Utf32Str::new(search_input, &mut query_buf);
+        let pattern = Pattern::parse(search_input, CaseMatching::Smart, Normalization::Smart);
         let mut command_buf = Vec::new();
         let command = Utf32Str::new(command, &mut command_buf);
 
         let Ok(mut matcher) = self.highlight_matcher.lock() else {
             return Vec::new();
         };
-        let Some(_) = matcher.fuzzy_indices(command, query, &mut indices) else {
+        let Some(_) = pattern.indices(command, &mut matcher, &mut indices) else {
             return Vec::new();
         };
+        indices.sort_unstable();
+        indices.dedup();
         indices
             .into_iter()
             .filter_map(|index| usize::try_from(index).ok())
@@ -162,10 +164,9 @@ fn fuzzy_search(
     let mut set = Vec::with_capacity(200);
     let mut ranks = Vec::with_capacity(200);
     let query = state.input.as_str();
+    let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let now = OffsetDateTime::now_utc();
 
-    let mut query_buf = Vec::new();
-    let query = Utf32Str::new(query, &mut query_buf);
     let mut command_buf = Vec::new();
     let mut match_indices = Vec::new();
 
@@ -240,7 +241,9 @@ fn fuzzy_search(
 
         let command = Utf32Str::new(&history.command, &mut command_buf);
         #[allow(clippy::cast_lossless, clippy::cast_precision_loss)]
-        if let Some(score) = matcher.fuzzy_indices(command, query, &mut match_indices) {
+        if let Some(score) = pattern.indices(command, matcher, &mut match_indices) {
+            match_indices.sort_unstable();
+            match_indices.dedup();
             let begin = match_indices.first().copied().unwrap_or_default();
 
             let mut duration = (now - history.timestamp).as_seconds_f64().log2();
