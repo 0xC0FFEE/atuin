@@ -10,6 +10,7 @@ use atuin_common::utils;
 use fs_err as fs;
 use itertools::Itertools;
 use rand::{Rng, distributions::Alphanumeric};
+use rusqlite::{Connection, OpenFlags};
 use sql_builder::{SqlBuilder, SqlName, bind::Bind, esc, quote};
 use sqlx::{
     Result, Row,
@@ -31,6 +32,70 @@ use super::{
     ordering,
     settings::{FilterMode, SearchMode},
 };
+
+pub fn all_with_count_rusqlite(
+    db_path: &Path,
+    timeout_secs: f64,
+) -> eyre::Result<Vec<(History, i32)>> {
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(Duration::from_secs_f64(timeout_secs))?;
+
+    let query = r#"
+        select
+            id,
+            max(timestamp) as timestamp,
+            max(duration) as duration,
+            exit,
+            command,
+            deleted_at,
+            null as author,
+            null as intent,
+            group_concat(cwd, ':') as cwd,
+            group_concat(session) as session,
+            group_concat(hostname, ',') as hostname,
+            count(*) as count
+        from history
+        where deleted_at is null
+        group by command, exit
+    "#;
+
+    let mut stmt = conn.prepare_cached(query)?;
+    let rows = stmt.query_map([], |row| {
+        let deleted_at: Option<i64> = row.get(5)?;
+        let hostname: String = row.get(10)?;
+        let author = History::author_from_hostname(hostname.as_str());
+        let timestamp = row.get::<_, i64>(1)?;
+
+        let history = History::from_db()
+            .id(row.get::<_, String>(0)?)
+            .timestamp(OffsetDateTime::from_unix_timestamp_nanos(timestamp as i128).unwrap())
+            .duration(row.get(2)?)
+            .exit(row.get(3)?)
+            .command(row.get(4)?)
+            .cwd(row.get(8)?)
+            .session(row.get(9)?)
+            .hostname(hostname)
+            .author(author)
+            .intent(None)
+            .deleted_at(
+                deleted_at.and_then(|t| OffsetDateTime::from_unix_timestamp_nanos(t as i128).ok()),
+            )
+            .build()
+            .into();
+        let count: i32 = row.get(11)?;
+
+        Ok((history, count))
+    })?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
 
 #[derive(Clone)]
 pub struct Context {
@@ -634,8 +699,7 @@ impl Database for Sqlite {
             ])
             .group_by("command")
             .group_by("exit")
-            .and_where("deleted_at is null")
-            .order_desc("timestamp");
+            .and_where("deleted_at is null");
 
         let query = query.sql().expect("bug in list query. please report");
 

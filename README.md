@@ -9,6 +9,10 @@ This fork is intentionally history-only:
 - no AI
 - no KV/scripts/dotfiles stores
 
+But:
+- blazingly fast history search
+- fzf-like interactive search via nucleo
+
 ## Features
 
 - Capture command history with context (cwd, exit code, duration, host/session)

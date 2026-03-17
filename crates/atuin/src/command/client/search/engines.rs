@@ -12,10 +12,10 @@ pub mod db;
 pub mod nucleo;
 pub mod skim;
 
-pub fn engine(search_mode: SearchMode, _settings: &Settings) -> Box<dyn SearchEngine> {
+pub fn engine(search_mode: SearchMode, settings: &Settings) -> Box<dyn SearchEngine> {
     match search_mode {
-        SearchMode::Skim => Box::new(skim::Search::new()) as Box<_>,
-        SearchMode::Nucleo => Box::new(nucleo::Search::new()) as Box<_>,
+        SearchMode::Skim => Box::new(skim::Search::new(settings)) as Box<_>,
+        SearchMode::Nucleo => Box::new(nucleo::Search::new(settings)) as Box<_>,
         mode => Box::new(db::Search(mode)) as Box<_>,
     }
 }

@@ -1,6 +1,6 @@
 use std::{
     io::{IsTerminal, Write, stdout},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(unix)]
@@ -10,6 +10,7 @@ use atuin_common::{shell::Shell, utils::Escapable as _};
 use eyre::Result;
 use futures_util::FutureExt;
 use time::OffsetDateTime;
+use tracing::info;
 use unicode_width::UnicodeWidthStr;
 
 use super::{
@@ -1550,6 +1551,9 @@ pub async fn history(
     mut db: impl Database,
     theme: &Theme,
 ) -> Result<String> {
+    let interactive_started_at = Instant::now();
+    info!(target: "atuin::search_perf", event = "interactive_start");
+
     let inline_height = if settings.shell_up_key_binding {
         settings
             .inline_height_shell_up_key_binding
@@ -1737,6 +1741,19 @@ pub async fn history(
 
     app.initialize_keymap_cursor(settings);
     let _ = app.preload_engine(&db).await?;
+    let mut preload_started_at = if app.engine.is_loading() {
+        info!(
+            target: "atuin::search_perf",
+            event = "preload_started",
+            elapsed_ms = interactive_started_at.elapsed().as_millis() as u64
+        );
+        Some(Instant::now())
+    } else {
+        None
+    };
+    let mut preload_finished_at: Option<Instant> = None;
+    let mut first_keypress_at: Option<Instant> = None;
+    let mut first_query_update_applied_at: Option<Instant> = None;
 
     let mut results = app.query_results(&mut db, settings.smart_sort).await?;
 
@@ -1748,7 +1765,29 @@ pub async fn history(
     let mut inspecting: Option<History> = None;
     let accept;
     let result = 'render: loop {
+        let was_loading = app.engine.is_loading();
         let preload_completed = app.preload_engine(&db).await?;
+        let is_loading = app.engine.is_loading();
+        if preload_started_at.is_none() && !was_loading && is_loading {
+            info!(
+                target: "atuin::search_perf",
+                event = "preload_started",
+                elapsed_ms = interactive_started_at.elapsed().as_millis() as u64
+            );
+            preload_started_at = Some(Instant::now());
+        }
+        if preload_completed && preload_finished_at.is_none() {
+            let preload_elapsed = preload_started_at
+                .map(|started| started.elapsed().as_millis() as u64)
+                .unwrap_or_default();
+            info!(
+                target: "atuin::search_perf",
+                event = "preload_finished",
+                elapsed_ms = interactive_started_at.elapsed().as_millis() as u64,
+                preload_elapsed_ms = preload_elapsed
+            );
+            preload_finished_at = Some(Instant::now());
+        }
 
         terminal.draw(|f| {
             app.draw(
@@ -1773,7 +1812,17 @@ pub async fn history(
             event_ready = event_ready => {
                 if event_ready?? {
                     loop {
-                        match app.handle_input(settings, &event::read()?, &mut std::io::stdout())? {
+                        let event = event::read()?;
+                        if first_keypress_at.is_none() && matches!(event, Event::Key(_)) {
+                            info!(
+                                target: "atuin::search_perf",
+                                event = "first_keypress",
+                                elapsed_ms = interactive_started_at.elapsed().as_millis() as u64
+                            );
+                            first_keypress_at = Some(Instant::now());
+                        }
+
+                        match app.handle_input(settings, &event, &mut std::io::stdout())? {
                             InputAction::Continue => {},
                             InputAction::Delete(index) => {
                                 if results.is_empty() {
@@ -1843,6 +1892,19 @@ pub async fn history(
             || (preload_completed && has_query)
         {
             results = app.query_results(&mut db, settings.smart_sort).await?;
+            if has_query && first_query_update_applied_at.is_none() {
+                let since_keypress_ms = first_keypress_at
+                    .map(|t| t.elapsed().as_millis() as u64)
+                    .unwrap_or_default();
+                info!(
+                    target: "atuin::search_perf",
+                    event = "first_query_update_applied",
+                    elapsed_ms = interactive_started_at.elapsed().as_millis() as u64,
+                    since_keypress_ms,
+                    result_count = results.len() as u64
+                );
+                first_query_update_applied_at = Some(Instant::now());
+            }
         }
 
         // In custom context mode, when no filter is applied, highlight the entry which was used

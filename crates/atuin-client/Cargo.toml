@@ -44,6 +44,7 @@ thiserror = { workspace = true }
 futures = "0.3"
 notify = "7"
 serde_with = "3.8.1"
+rusqlite = { workspace = true }
 
 # theme
 crossterm = { workspace = true, features = ["serde"] }

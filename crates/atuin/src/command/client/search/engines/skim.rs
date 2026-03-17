@@ -1,14 +1,18 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use atuin_client::{database::Database, history::History, settings::FilterMode};
+use atuin_client::{
+    database::{Database, all_with_count_rusqlite},
+    history::History,
+    settings::{FilterMode, Settings},
+};
 use eyre::Result;
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
 use time::OffsetDateTime;
 use tokio::task::JoinHandle;
 use tokio::task::yield_now;
-use tracing::{Level, instrument, warn};
+use tracing::{Level, info, instrument, warn};
 use uuid;
 
 use super::{SearchEngine, SearchState};
@@ -16,14 +20,18 @@ use super::{SearchEngine, SearchState};
 pub struct Search {
     all_history: Vec<(History, i32)>,
     preload: Option<JoinHandle<Vec<(History, i32)>>>,
+    preload_db_path: String,
+    preload_timeout_secs: f64,
     engine: SkimMatcherV2,
 }
 
 impl Search {
-    pub fn new() -> Self {
+    pub fn new(settings: &Settings) -> Self {
         Search {
             all_history: vec![],
             preload: None,
+            preload_db_path: settings.db_path.clone(),
+            preload_timeout_secs: settings.local_timeout,
             engine: SkimMatcherV2::default(),
         }
     }
@@ -34,15 +42,33 @@ impl Search {
         }
 
         let db = db.clone_boxed();
+        let db_path = self.preload_db_path.clone();
+        let timeout_secs = self.preload_timeout_secs;
         self.preload = Some(tokio::task::spawn_blocking(move || {
-            let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            else {
-                return Vec::new();
-            };
-
-            runtime.block_on(async move { db.all_with_count().await.unwrap_or_default() })
+            let started = std::time::Instant::now();
+            info!(target: "atuin::search_perf", event = "engine_preload_started", engine = "skim");
+            let all_history =
+                match all_with_count_rusqlite(std::path::Path::new(&db_path), timeout_secs) {
+                    Ok(rows) => rows,
+                    Err(_) => {
+                        let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        else {
+                            return Vec::new();
+                        };
+                        runtime
+                            .block_on(async move { db.all_with_count().await.unwrap_or_default() })
+                    }
+                };
+            info!(
+                target: "atuin::search_perf",
+                event = "engine_preload_finished",
+                engine = "skim",
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                entry_count = all_history.len() as u64
+            );
+            all_history
         }));
     }
 
@@ -101,7 +127,7 @@ impl SearchEngine for Search {
     }
 
     fn is_loading(&self) -> bool {
-        self.all_history.is_empty() && self.preload.is_some()
+        self.preload.is_some()
     }
 }
 

@@ -2,7 +2,12 @@
 members = ["crates/*", "crates/atuin-nucleo/matcher", "crates/atuin-nucleo/bench"]
 
 resolver = "2"
-exclude = ["ui/backend", "crates/atuin-nucleo/matcher/fuzz"]
+exclude = [
+  "ui/backend",
+  "crates/atuin-nucleo/matcher/fuzz",
+  "crates/history-db-v2-builder",
+  "crates/preload-bench",
+]
 
 [workspace.package]
 version = "18.13.3"
@@ -48,6 +53,7 @@ tracing = "0.1"
 ratatui = "0.30.0"
 sql-builder = "3"
 tempfile = { version = "3.19" }
+rusqlite = "0.32.1"
 
 [workspace.dependencies.tracing-subscriber]
 version = "0.3"
