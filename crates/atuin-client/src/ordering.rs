@@ -4,7 +4,7 @@ use super::{history::History, settings::SearchMode};
 
 pub fn reorder_fuzzy(mode: SearchMode, query: &str, res: Vec<History>) -> Vec<History> {
     match mode {
-        SearchMode::Fuzzy => reorder(query, |x| &x.command, res),
+        SearchMode::Fuzzy | SearchMode::Nucleo => reorder(query, |x| &x.command, res),
         _ => res,
     }
 }
@@ -29,4 +29,39 @@ where
         1 + to - from
     });
     r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::history::History;
+    use time::OffsetDateTime;
+
+    #[test]
+    fn nucleo_reorders_like_fuzzy() {
+        let q = "abc";
+        let mk = |command: &str| History {
+            id: "id".to_string().into(),
+            timestamp: OffsetDateTime::UNIX_EPOCH,
+            duration: 0,
+            exit: 0,
+            command: command.to_string(),
+            cwd: "/".to_string(),
+            session: "session".to_string(),
+            hostname: "host:user".to_string(),
+            author: "user".to_string(),
+            intent: None,
+            deleted_at: None,
+        };
+
+        let input = vec![mk("a___b___c"), mk("abc"), mk("zzz")];
+
+        let fuzzy = reorder_fuzzy(SearchMode::Fuzzy, q, input.clone());
+        let nucleo = reorder_fuzzy(SearchMode::Nucleo, q, input);
+
+        assert_eq!(
+            fuzzy.iter().map(|h| &h.command).collect::<Vec<_>>(),
+            nucleo.iter().map(|h| &h.command).collect::<Vec<_>>()
+        );
+    }
 }

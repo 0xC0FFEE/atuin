@@ -19,7 +19,7 @@
 # timezone = "local"
 
 ## which search mode to use
-## possible values: prefix, fulltext, fuzzy, skim
+## possible values: prefix, fulltext, fuzzy, skim, nucleo
 # search_mode = "fuzzy"
 
 ## which filter mode to use by default
