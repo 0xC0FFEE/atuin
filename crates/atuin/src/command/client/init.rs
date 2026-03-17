@@ -1,13 +1,5 @@
-use std::path::PathBuf;
-
-use atuin_client::{
-    encryption,
-    record::sqlite_store::SqliteStore,
-    settings::{Settings, Tmux},
-};
-use atuin_dotfiles::store::{AliasStore, var::VarStore};
+use atuin_client::settings::{Settings, Tmux};
 use clap::{Parser, ValueEnum};
-use eyre::{Result, WrapErr};
 
 mod bash;
 mod fish;
@@ -26,10 +18,6 @@ pub struct Cmd {
     /// Disable the binding of the Up Arrow key to atuin
     #[clap(long)]
     disable_up_arrow: bool,
-
-    /// Disable the binding of ? to Atuin AI
-    #[clap(long)]
-    disable_ai: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum, Debug)]
@@ -101,28 +89,13 @@ $env.config = (
     fn static_init(&self, tmux: &Tmux) {
         match self.shell {
             Shell::Zsh => {
-                zsh::init_static(
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    tmux,
-                );
+                zsh::init_static(self.disable_up_arrow, self.disable_ctrl_r, tmux);
             }
             Shell::Bash => {
-                bash::init_static(
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    tmux,
-                );
+                bash::init_static(self.disable_up_arrow, self.disable_ctrl_r, tmux);
             }
             Shell::Fish => {
-                fish::init_static(
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    tmux,
-                );
+                fish::init_static(self.disable_up_arrow, self.disable_ctrl_r, tmux);
             }
             Shell::Nu => {
                 self.init_nu(tmux);
@@ -136,92 +109,14 @@ $env.config = (
         }
     }
 
-    async fn dotfiles_init(&self, settings: &Settings) -> Result<()> {
-        let record_store_path = PathBuf::from(settings.record_store_path.as_str());
-        let sqlite_store = SqliteStore::new(record_store_path, settings.local_timeout).await?;
-
-        let encryption_key: [u8; 32] = encryption::load_key(settings)
-            .context("could not load encryption key")?
-            .into();
-        let host_id = Settings::host_id().await?;
-
-        let alias_store = AliasStore::new(sqlite_store.clone(), host_id, encryption_key);
-        let var_store = VarStore::new(sqlite_store.clone(), host_id, encryption_key);
-
-        match self.shell {
-            Shell::Zsh => {
-                zsh::init(
-                    alias_store,
-                    var_store,
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    &settings.tmux,
-                )
-                .await?;
-            }
-            Shell::Bash => {
-                bash::init(
-                    alias_store,
-                    var_store,
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    &settings.tmux,
-                )
-                .await?;
-            }
-            Shell::Fish => {
-                fish::init(
-                    alias_store,
-                    var_store,
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    self.disable_ai,
-                    &settings.tmux,
-                )
-                .await?;
-            }
-            Shell::Nu => self.init_nu(&settings.tmux),
-            Shell::Xonsh => {
-                xonsh::init(
-                    alias_store,
-                    var_store,
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    &settings.tmux,
-                )
-                .await?;
-            }
-            Shell::PowerShell => {
-                powershell::init(
-                    alias_store,
-                    var_store,
-                    self.disable_up_arrow,
-                    self.disable_ctrl_r,
-                    &settings.tmux,
-                )
-                .await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn run(self, settings: &Settings) -> Result<()> {
+    pub fn run(self, settings: &Settings) {
         if !settings.paths_ok() {
             eprintln!(
                 "Atuin settings paths are broken. Disabling atuin shell hooks. Run `atuin doctor` to diagnose."
             );
-            return Ok(());
+            return;
         }
 
-        if settings.dotfiles.enabled {
-            self.dotfiles_init(settings).await?;
-        } else {
-            self.static_init(&settings.tmux);
-        }
-
-        Ok(())
+        self.static_init(&settings.tmux);
     }
 }

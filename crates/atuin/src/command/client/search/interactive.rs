@@ -9,7 +9,6 @@ use std::io::Read as _;
 use atuin_common::{shell::Shell, utils::Escapable as _};
 use eyre::Result;
 use futures_util::FutureExt;
-use semver::Version;
 use time::OffsetDateTime;
 use unicode_width::UnicodeWidthStr;
 
@@ -20,7 +19,7 @@ use super::{
 };
 use atuin_client::{
     database::{Context, Database, current_context},
-    history::{History, HistoryId, HistoryStats, store::HistoryStore},
+    history::{History, HistoryId, HistoryStats},
     settings::{
         CursorStyle, ExitMode, FilterMode, KeymapMode, PreviewStrategy, SearchMode, Settings,
         UiColumn,
@@ -113,7 +112,7 @@ pub fn to_compactness(f: &Frame, settings: &Settings) -> Compactness {
 #[allow(clippy::struct_excessive_bools)]
 pub struct State {
     history_count: i64,
-    update_needed: Option<Version>,
+    update_needed: bool,
     results_state: ListState,
     switched_search_mode: bool,
     search_mode: SearchMode,
@@ -1091,7 +1090,7 @@ impl State {
     }
 
     fn build_title(&self, theme: &Theme) -> Paragraph<'_> {
-        let title = if self.update_needed.is_some() {
+        let title = if self.update_needed {
             let error_style: Style = Style::from_crossterm(theme.get_error());
             Paragraph::new(Text::from(Span::styled(
                 format!("Atuin v{VERSION} - UPDATE"),
@@ -1545,7 +1544,6 @@ pub async fn history(
     query: &[String],
     settings: &Settings,
     mut db: impl Database,
-    history_store: &HistoryStore,
     theme: &Theme,
 ) -> Result<String> {
     let inline_height = if settings.shell_up_key_binding {
@@ -1698,7 +1696,7 @@ pub async fn history(
     let mut app = State {
         history_count,
         results_state: ListState::default(),
-        update_needed: None,
+        update_needed: false,
         switched_search_mode: false,
         search_mode,
         tab_index: 0,
@@ -1783,12 +1781,7 @@ pub async fn history(
 
                                 let entry = results.remove(index);
 
-                                if settings.sync.records {
-                                    let (id, _) = history_store.delete(entry.id).await?;
-                                    history_store.incremental_build(&db, &[id]).await?;
-                                } else {
-                                    db.delete(entry.clone()).await?;
-                                }
+                                db.delete(entry).await?;
 
                                 app.tab_index  = 0;
                             },
@@ -1827,7 +1820,7 @@ pub async fn history(
             update_needed = &mut update_needed => {
                 // Don't fail interactive search if update check fails
                 // The update check is a nice-to-have feature, not critical
-                app.update_needed = update_needed.ok().flatten();
+                app.update_needed = update_needed.ok().unwrap_or(false);
             }
         }
 
@@ -2152,7 +2145,7 @@ mod tests {
         let settings = Settings::utc();
         let mut state = State {
             history_count: 0,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2177,7 +2170,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2207,7 +2199,7 @@ mod tests {
 
         let mut state = State {
             history_count: 1,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2232,7 +2224,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2326,7 +2317,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2351,7 +2342,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2385,7 +2375,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2410,7 +2400,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2440,7 +2429,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2465,7 +2454,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2491,7 +2479,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2516,7 +2504,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2551,7 +2538,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2576,7 +2563,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2612,7 +2598,7 @@ mod tests {
         let settings = Settings::utc();
         let mut state = State {
             history_count: results_len as i64,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -2637,7 +2623,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,
@@ -2991,7 +2976,7 @@ mod tests {
 
         let mut state = State {
             history_count: 100,
-            update_needed: None,
+            update_needed: false,
             results_state: ListState::default(),
             switched_search_mode: false,
             search_mode: SearchMode::Fuzzy,
@@ -3016,7 +3001,6 @@ mod tests {
                     session: String::new(),
                     cwd: String::new(),
                     hostname: String::new(),
-                    host_id: String::new(),
                     git_root: None,
                 },
                 custom_context: None,

@@ -5,7 +5,6 @@ use rmp::{Marker, decode::Bytes};
 use std::env;
 use std::fmt::Display;
 
-use atuin_common::record::DecryptedData;
 use atuin_common::utils::uuid_v7;
 
 use eyre::{Result, bail, eyre};
@@ -16,14 +15,15 @@ use crate::utils::get_host_user;
 use time::OffsetDateTime;
 
 mod builder;
-pub mod store;
 
 pub(crate) const HISTORY_VERSION_V0: &str = "v0";
 pub(crate) const HISTORY_VERSION_V1: &str = "v1";
 const HISTORY_RECORD_VERSION_V0: u16 = 0;
 const HISTORY_RECORD_VERSION_V1: u16 = 1;
+#[cfg(test)]
 pub(crate) const HISTORY_VERSION: &str = HISTORY_VERSION_V1;
 pub const HISTORY_TAG: &str = "history";
+pub struct DecryptedData(pub Vec<u8>);
 const HISTORY_AUTHOR_ENV: &str = "ATUIN_HISTORY_AUTHOR";
 const HISTORY_INTENT_ENV: &str = "ATUIN_HISTORY_INTENT";
 

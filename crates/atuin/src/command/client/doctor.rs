@@ -234,52 +234,20 @@ impl SystemInfo {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct SyncInfo {
-    /// Whether the main Atuin sync server is in use
-    /// I'm just calling it Atuin Cloud for lack of a better name atm
-    pub cloud: bool,
-    pub records: bool,
-    pub auto_sync: bool,
-
-    pub last_sync: String,
-}
-
-impl SyncInfo {
-    pub async fn new(settings: &Settings) -> Self {
-        Self {
-            cloud: settings.is_hub_sync(),
-            auto_sync: settings.auto_sync,
-            records: settings.sync.records,
-            last_sync: Settings::last_sync()
-                .await
-                .map_or_else(|_| "no last sync".to_string(), |v| v.to_string()),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct SettingPaths {
     db: String,
-    record_store: String,
-    key: String,
 }
 
 impl SettingPaths {
     pub fn new(settings: &Settings) -> Self {
         Self {
             db: settings.db_path.clone(),
-            record_store: settings.record_store_path.clone(),
-            key: settings.key_path.clone(),
         }
     }
 
     pub fn verify(&self) {
-        let paths = vec![
-            ("ATUIN_DB_PATH", &self.db),
-            ("ATUIN_RECORD_STORE", &self.record_store),
-            ("ATUIN_KEY", &self.key),
-        ];
+        let paths = vec![("ATUIN_DB_PATH", &self.db)];
 
         for (path_env_var, path) in paths {
             if utils::broken_symlink(path) {
@@ -296,10 +264,6 @@ struct AtuinInfo {
     pub version: String,
     pub commit: String,
 
-    /// Whether the main Atuin sync server is in use
-    /// I'm just calling it Atuin Cloud for lack of a better name atm
-    pub sync: Option<SyncInfo>,
-
     pub sqlite_version: String,
 
     #[serde(skip)] // probably unnecessary to expose this
@@ -308,14 +272,6 @@ struct AtuinInfo {
 
 impl AtuinInfo {
     pub async fn new(settings: &Settings) -> Self {
-        let logged_in = settings.logged_in().await.unwrap_or(false);
-
-        let sync = if logged_in {
-            Some(SyncInfo::new(settings).await)
-        } else {
-            None
-        };
-
         let sqlite_version = match Sqlite::new("sqlite::memory:", 0.1).await {
             Ok(db) => db
                 .sqlite_version()
@@ -327,7 +283,6 @@ impl AtuinInfo {
         Self {
             version: crate::VERSION.to_string(),
             commit: crate::SHA.to_string(),
-            sync,
             sqlite_version,
             setting_paths: SettingPaths::new(settings),
         }

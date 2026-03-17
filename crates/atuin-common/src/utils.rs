@@ -2,38 +2,10 @@ use std::borrow::Cow;
 use std::env;
 use std::path::PathBuf;
 
-use eyre::{Result, eyre};
-
-use base64::prelude::{BASE64_URL_SAFE_NO_PAD, Engine};
-use getrandom::getrandom;
 use uuid::Uuid;
-
-/// Generate N random bytes, using a cryptographically secure source
-pub fn crypto_random_bytes<const N: usize>() -> [u8; N] {
-    // rand say they are in principle safe for crypto purposes, but that it is perhaps a better
-    // idea to use getrandom for things such as passwords.
-    let mut ret = [0u8; N];
-
-    getrandom(&mut ret).expect("Failed to generate random bytes!");
-
-    ret
-}
-
-/// Generate N random bytes using a cryptographically secure source, return encoded as a string
-pub fn crypto_random_string<const N: usize>() -> String {
-    let bytes = crypto_random_bytes::<N>();
-
-    // We only use this to create a random string, and won't be reversing it to find the original
-    // data - no padding is OK there. It may be in URLs.
-    BASE64_URL_SAFE_NO_PAD.encode(bytes)
-}
 
 pub fn uuid_v7() -> Uuid {
     Uuid::now_v7()
-}
-
-pub fn uuid_v4() -> String {
-    Uuid::new_v4().as_simple().to_string()
 }
 
 pub fn has_git_dir(path: &str) -> bool {
@@ -84,20 +56,8 @@ pub fn data_dir() -> PathBuf {
     data_dir.join("atuin")
 }
 
-pub fn runtime_dir() -> PathBuf {
-    std::env::var("XDG_RUNTIME_DIR").map_or_else(|_| data_dir(), PathBuf::from)
-}
-
 pub fn logs_dir() -> PathBuf {
     home_dir().join(".atuin").join("logs")
-}
-
-pub fn dotfiles_cache_dir() -> PathBuf {
-    // In most cases, this will be  ~/.local/share/atuin/dotfiles/cache
-    let data_dir = std::env::var("XDG_DATA_HOME")
-        .map_or_else(|_| home_dir().join(".local").join("share"), PathBuf::from);
-
-    data_dir.join("atuin").join("dotfiles").join("cache")
 }
 
 pub fn get_current_dir() -> String {
@@ -146,37 +106,11 @@ pub trait Escapable: AsRef<str> {
     }
 }
 
-pub fn unquote(s: &str) -> Result<String> {
-    if s.chars().count() < 2 {
-        return Err(eyre!("not enough chars"));
-    }
-
-    let quote = s.chars().next().unwrap();
-
-    // not quoted, do nothing
-    if quote != '"' && quote != '\'' && quote != '`' {
-        return Ok(s.to_string());
-    }
-
-    if s.chars().last().unwrap() != quote {
-        return Err(eyre!("unexpected eof, quotes do not match"));
-    }
-
-    // removes quote characters
-    // the sanity checks performed above ensure that the quotes will be ASCII and this will not
-    // panic
-    let s = &s[1..s.len() - 1];
-
-    Ok(s.to_string())
-}
-
 impl<T: AsRef<str>> Escapable for T {}
 
 #[allow(unsafe_code)]
 #[cfg(test)]
 mod tests {
-    use pretty_assertions::assert_ne;
-
     use super::*;
 
     use std::collections::HashSet;
@@ -284,18 +218,5 @@ mod tests {
             "with \x1b[31mcontrol\x1b[0m characters".escape_control(),
             Cow::Owned(_)
         ));
-    }
-
-    #[test]
-    fn dumb_random_test() {
-        // Obviously not a test of randomness, but make sure we haven't made some
-        // catastrophic error
-
-        assert_ne!(crypto_random_string::<1>(), crypto_random_string::<1>());
-        assert_ne!(crypto_random_string::<2>(), crypto_random_string::<2>());
-        assert_ne!(crypto_random_string::<4>(), crypto_random_string::<4>());
-        assert_ne!(crypto_random_string::<8>(), crypto_random_string::<8>());
-        assert_ne!(crypto_random_string::<16>(), crypto_random_string::<16>());
-        assert_ne!(crypto_random_string::<32>(), crypto_random_string::<32>());
     }
 }

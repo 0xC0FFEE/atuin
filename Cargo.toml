@@ -17,18 +17,9 @@ readme = "README.md"
 async-trait = "0.1.58"
 atuin-client = { path = "crates/atuin-client", version = "18.13.3" }
 atuin-common = { path = "crates/atuin-common", version = "18.13.3" }
-atuin-daemon = { path = "crates/atuin-daemon", version = "18.13.3" }
-atuin-dotfiles = { path = "crates/atuin-dotfiles", version = "18.13.3" }
 atuin-history = { path = "crates/atuin-history", version = "18.13.3" }
-atuin-kv = { path = "crates/atuin-kv", version = "18.13.3" }
-atuin-scripts = { path = "crates/atuin-scripts", version = "18.13.3" }
-atuin-server = { path = "crates/atuin-server", version = "18.13.3" }
-atuin-server-database = { path = "crates/atuin-server-database", version = "18.13.3" }
-atuin-server-postgres = { path = "crates/atuin-server-postgres", version = "18.13.3" }
-atuin-server-sqlite = { path = "crates/atuin-server-sqlite", version = "18.13.3" }
 atuin-nucleo = { path = "crates/atuin-nucleo", version = "0.6.0" }
 atuin-nucleo-matcher = { path = "crates/atuin-nucleo/matcher", version = "0.3.1" }
-base64 = "0.22"
 crossterm = "0.29.0"
 log = "0.4"
 time = { version = "0.3.47", features = [
@@ -44,7 +35,6 @@ fs-err = "3.1"
 interim = { version = "0.2.0", features = ["time_0_3"] }
 itertools = "0.14.0"
 rand = { version = "0.8.5", features = ["std"] }
-semver = "1.0.20"
 serde = { version = "1.0.202", features = ["derive"] }
 serde_json = "1.0.119"
 tokio = { version = "1", features = ["full"] }
@@ -54,30 +44,18 @@ typed-builder = "0.18.2"
 pretty_assertions = "1.3.0"
 thiserror = "2"
 rustix = { version = "1.1.4", features = ["process", "fs"] }
-tower = "0.5"
 tracing = "0.1"
 ratatui = "0.30.0"
 sql-builder = "3"
 tempfile = { version = "3.19" }
-minijinja = "2.9.0"
-rustls = { version = "0.23", default-features = false, features = [
-  "ring",
-  "std",
-  "tls12",
-] }
 
 [workspace.dependencies.tracing-subscriber]
 version = "0.3"
 features = ["ansi", "fmt", "registry", "env-filter", "json"]
 
-[workspace.dependencies.reqwest]
-version = "0.13"
-features = ["json", "rustls-no-provider", "stream"]
-default-features = false
-
 [workspace.dependencies.sqlx]
 version = "0.8"
-features = ["runtime-tokio-rustls", "time", "postgres", "uuid"]
+features = ["runtime-tokio-rustls", "time", "uuid"]
 
 # The profile that 'cargo dist' will build with
 [profile.dist]

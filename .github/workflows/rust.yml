@@ -42,9 +42,6 @@ jobs:
       - name: Run cargo build client
         run: cargo build -p atuin-client --locked --release
 
-      - name: Run cargo build server
-        run: cargo build -p atuin-server --locked --release
-
       - name: Run cargo build main
         run: cargo build --all --locked --release
 
@@ -77,9 +74,6 @@ jobs:
 
       - name: Run cross build client
         run: cross build -p atuin-client --locked --target ${{ matrix.target }}
-
-      - name: Run cross build server
-        run: cross build -p atuin-server --locked --target ${{ matrix.target }}
 
       - name: Run cross build main
         run: |
@@ -137,59 +131,11 @@ jobs:
              target
           key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run cargo check (all features)
-        run: cargo check --all-features --workspace
-
       - name: Run cargo check (no features)
         run: cargo check --no-default-features --workspace
 
-      - name: Run cargo check (sync)
-        run: cargo check --no-default-features --features sync --workspace
-
-      - name: Run cargo check (server)
-        run: cargo check -p atuin-server
-
       - name: Run cargo check (client only)
         run: cargo check --no-default-features --features client --workspace
-
-  integration-test:
-    runs-on: depot-ubuntu-24.04
-
-    services:
-      postgres:
-        image: postgres
-        env:
-          POSTGRES_USER: atuin
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: atuin
-        ports:
-          - 5432:5432
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.94.0
-
-      - uses: taiki-e/install-action@v2
-        name: Install nextest
-        with:
-          tool: cargo-nextest
-
-      - uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-             ~/.cargo/git
-             target
-          key: ${{ runner.os }}-cargo-debug-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run cargo test
-        run: cargo nextest run --test '*'
-        env:
-          ATUIN_DB_URI: postgres://atuin:pass@localhost:5432/atuin
 
   clippy:
     runs-on: depot-ubuntu-24.04

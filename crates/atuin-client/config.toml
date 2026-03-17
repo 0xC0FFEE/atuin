@@ -1,4 +1,4 @@
-## Base directory for Atuin data files (databases, keys, session, etc.)
+## Base directory for Atuin data files (databases, etc.)
 ## All data file paths default to being relative to this directory.
 ## linux/mac: ~/.local/share/atuin (or XDG_DATA_HOME/atuin)
 ## windows: %USERPROFILE%/.local/share/atuin
@@ -9,16 +9,6 @@
 ## windows: %USERPROFILE%/.local/share/atuin/history.db
 # db_path = "~/.history.db"
 
-## where to store your encryption key, default is your system data directory
-## linux/mac: ~/.local/share/atuin/key
-## windows: %USERPROFILE%/.local/share/atuin/key
-# key_path = "~/.key"
-
-## where to store your auth session token, default is your system data directory
-## linux/mac: ~/.local/share/atuin/session
-## windows: %USERPROFILE%/.local/share/atuin/session
-# session_path = "~/.session"
-
 ## date format used, either "us" or "uk"
 # dialect = "us"
 
@@ -27,20 +17,6 @@
 ## from UTC in the format of "<+|->H[H][:M[M][:S[S]]]"
 ## for example: "+9", "-05", "+03:30", "-01:23:45", etc.
 # timezone = "local"
-
-## enable or disable automatic sync
-# auto_sync = true
-
-## enable or disable automatic update checks
-# update_check = true
-
-## address of the sync server
-# sync_address = "https://api.atuin.sh"
-
-## how often to sync history. note that this is only triggered when a command
-## is ran, so sync intervals may well be longer
-## set it to 0 to sync after every command
-# sync_frequency = "10m"
 
 ## which search mode to use
 ## possible values: prefix, fulltext, fuzzy, skim
@@ -138,7 +114,7 @@
 # max_preview_height = 4
 
 ## Configure whether or not to show the help row, which includes the current Atuin
-## version (and whether an update is available), a keymap hint, and the total
+## version, a keymap hint, and the total
 ## amount of commands in your history.
 # show_help = true
 
@@ -181,9 +157,6 @@ enter_accept = true
 ## in entering the cursor shape.  Available values are "default" and
 ## "{blink,steady}-{block,underline,bar}".
 # keymap_cursor = { emacs = "blink-block", vim_insert = "blink-block", vim_normal = "steady-block" }
-
-# network_connect_timeout = 5
-# network_timeout = 5
 
 ## Timeout (in seconds) for acquiring a local database connection (sqlite)
 # local_timeout = 5
@@ -244,12 +217,6 @@ enter_accept = true
 # Defaults to false. The backspace key performs the same functionality as Tab and copies the selected line to the command line to be modified when at the start of the line.
 # accept_with_backspace = false
 
-[sync]
-# Enable sync v2 by default
-# This ensures that sync v2 is enabled for new installs only
-# In a later release it will become the default across the board
-records = true
-
 [preview]
 ## which preview strategy to use to calculate the preview height (respects max_preview_height).
 ## possible values: auto, static
@@ -257,34 +224,6 @@ records = true
 ## static: length of the longest command stored in the history.
 ## fixed: use max_preview_height as fixed height.
 # strategy = "auto"
-
-[daemon]
-## Enables using the daemon to sync.
-# enabled = false
-
-## Automatically start and manage the daemon when needed.
-## Not compatible with `systemd_socket = true`.
-# autostart = false
-
-## How often the daemon should sync in seconds
-# sync_frequency = 300
-
-## The path to the unix socket used by the daemon (on unix systems)
-## linux/mac: ~/.local/share/atuin/atuin.sock
-## windows: Not Supported
-# socket_path = "~/.local/share/atuin/atuin.sock"
-
-## The daemon pidfile used for lifecycle management.
-## Defaults to the Atuin data directory.
-# pidfile_path = "~/.local/share/atuin/atuin-daemon.pid"
-
-## Use systemd socket activation rather than opening the given path (the path must still be correct for the client)
-## linux: false
-## mac/windows: Not Supported
-# systemd_socket = false
-
-## The port that should be used for TCP on non unix systems
-# tcp_port = 8889
 
 # [theme]
 ## Color theme to use for rendering in the terminal.
@@ -356,7 +295,7 @@ records = true
 ## With wider directory column:
 # columns = ["duration", { type = "directory", width = 30 }, "command"]
 ##
-## Show host for multi-machine sync users:
+## Show host information:
 # columns = ["duration", "time", "host", "command"]
 ##
 ## Show exit codes prominently:

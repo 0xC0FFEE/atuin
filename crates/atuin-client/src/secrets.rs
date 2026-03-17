@@ -3,6 +3,7 @@
 use regex::RegexSet;
 use std::sync::LazyLock;
 
+#[allow(dead_code)]
 pub enum TestValue<'a> {
     Single(&'a str),
     Multiple(&'a [&'a str]),

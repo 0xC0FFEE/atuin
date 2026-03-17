@@ -8,9 +8,7 @@ use eyre::Result;
 use atuin_client::{
     database::Database,
     database::{OptFilters, current_context},
-    encryption,
-    history::{History, store::HistoryStore},
-    record::sqlite_store::SqliteStore,
+    history::History,
     settings::{FilterMode, KeymapMode, SearchMode, Settings, Timezone},
     theme::Theme,
 };
@@ -154,7 +152,6 @@ impl Cmd {
         self,
         db: impl Database,
         settings: &mut Settings,
-        store: SqliteStore,
         theme: &Theme,
     ) -> Result<()> {
         let query = self.query.unwrap_or_else(|| {
@@ -215,13 +212,8 @@ impl Cmd {
         };
         settings.keymap_mode_shell = self.keymap_mode;
 
-        let encryption_key: [u8; 32] = encryption::load_key(settings)?.into();
-
-        let host_id = Settings::host_id().await?;
-        let history_store = HistoryStore::new(store.clone(), host_id, encryption_key);
-
         if self.interactive {
-            let item = interactive::history(&query, settings, db, &history_store, theme).await?;
+            let item = interactive::history(&query, settings, db, theme).await?;
 
             if let Some(result_file) = self.result_file {
                 let mut file = File::create(result_file)?;
@@ -264,13 +256,7 @@ impl Cmd {
                 while !entries.is_empty() {
                     for entry in &entries {
                         eprintln!("deleting {}", entry.id);
-
-                        if settings.sync.records {
-                            let (id, _) = history_store.delete(entry.id.clone()).await?;
-                            history_store.incremental_build(&db, &[id]).await?;
-                        } else {
-                            db.delete(entry.clone()).await?;
-                        }
+                        db.delete(entry.clone()).await?;
                     }
 
                     entries =

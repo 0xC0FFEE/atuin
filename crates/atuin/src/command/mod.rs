@@ -7,11 +7,7 @@ use rustix::{fs::Mode, process::umask};
 #[cfg(feature = "client")]
 mod client;
 
-mod contributors;
-
 mod gen_completions;
-
-mod external;
 
 #[derive(Subcommand)]
 #[command(infer_subcommands = true)]
@@ -21,23 +17,8 @@ pub enum AtuinCmd {
     #[command(flatten)]
     Client(client::Cmd),
 
-    /// Terminal emulator for atuin
-    #[cfg(feature = "hex")]
-    Hex {
-        #[command(subcommand)]
-        cmd: Option<atuin_hex::Cmd>,
-    },
-
-    /// Generate a UUID
-    Uuid,
-
-    Contributors,
-
     /// Generate shell completions
     GenCompletions(gen_completions::Cmd),
-
-    #[command(external_subcommand)]
-    External(Vec<String>),
 }
 
 impl AtuinCmd {
@@ -54,22 +35,7 @@ impl AtuinCmd {
             #[cfg(feature = "client")]
             Self::Client(client) => client.run(),
 
-            #[cfg(feature = "hex")]
-            Self::Hex { cmd } => {
-                atuin_hex::run(cmd);
-                Ok(())
-            }
-
-            Self::Contributors => {
-                contributors::run();
-                Ok(())
-            }
-            Self::Uuid => {
-                println!("{}", atuin_common::utils::uuid_v7().as_simple());
-                Ok(())
-            }
             Self::GenCompletions(gen_completions) => gen_completions.run(),
-            Self::External(args) => external::run(&args),
         }
     }
 }

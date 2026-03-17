@@ -113,45 +113,11 @@ if [ "$ATUIN_NON_INTERACTIVE" != "yes" ]; then
       ;;
   esac
 
-  cat << EOF
-Sync your history across all your machines with Atuin Cloud:
-
-  - End-to-end encrypted — only you can read your data
-  - Access your history from any device
-  - Never lose your history, even if you wipe a machine
-
-EOF
-
-  printf "Sign up for a sync account? [Y/n] "
-  read -r sync_answer </dev/tty || sync_answer="n"
-  sync_answer="${sync_answer:-y}"
-
-  case "$sync_answer" in
-    [yY]*)
-      echo ""
-      if ! "$ATUIN_BIN" register </dev/tty; then
-        echo ""
-        echo "Registration did not complete. You can run 'atuin register' any time to try again."
-      fi
-      ;;
-    *)
-      echo ""
-      printf "Already have an account? Log in with 'atuin login'.\n"
-      echo "You can also run 'atuin register' any time to create one."
-      ;;
-  esac
-
 else
   echo "Non-interactive environment detected — skipping setup prompts."
   echo "You can run the following commands manually after installation:"
   echo ""
   echo "  atuin import auto       Import your existing shell history"
-  echo "  atuin register          Sign up for a sync account"
-  echo "  atuin login             Log in to an existing sync account"
-fi
-
-if [ "$ATUIN_NON_INTERACTIVE" != "yes" ]; then
-  "$ATUIN_BIN" setup
 fi
 
 cat << EOF

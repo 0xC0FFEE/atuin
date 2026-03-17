@@ -29,7 +29,7 @@ use crate::{
 use super::{
     history::History,
     ordering,
-    settings::{FilterMode, SearchMode, Settings},
+    settings::{FilterMode, SearchMode},
 };
 
 #[derive(Clone)]
@@ -37,7 +37,6 @@ pub struct Context {
     pub session: String,
     pub cwd: String,
     pub hostname: String,
-    pub host_id: String,
     pub git_root: Option<PathBuf>,
 }
 
@@ -61,7 +60,6 @@ pub async fn current_context() -> eyre::Result<Context> {
     })?;
     let hostname = get_host_user();
     let cwd = utils::get_current_dir();
-    let host_id = Settings::host_id().await?;
     let git_root = utils::in_git_repo(cwd.as_str());
 
     Ok(Context {
@@ -69,7 +67,6 @@ pub async fn current_context() -> eyre::Result<Context> {
         hostname,
         cwd,
         git_root,
-        host_id: host_id.0.as_simple().to_string(),
     })
 }
 
@@ -79,7 +76,6 @@ impl Context {
             session: entry.session.to_string(),
             cwd: entry.cwd.to_string(),
             hostname: entry.hostname.to_string(),
-            host_id: String::new(),
             git_root: utils::in_git_repo(entry.cwd.as_str()),
         }
     }
@@ -946,7 +942,6 @@ mod test {
             hostname: "test:host".to_string(),
             session: "beepboopiamasession".to_string(),
             cwd: "/home/ellie".to_string(),
-            host_id: "test-host".to_string(),
             git_root: None,
         };
 
@@ -1329,7 +1324,6 @@ mod test {
                     hostname: "".to_string(),
                     session: "".to_string(),
                     cwd: "".to_string(),
-                    host_id: "".to_string(),
                     git_root: None,
                 },
                 None,
@@ -1363,7 +1357,6 @@ mod test {
             hostname: "test:host".to_string(),
             session: "beepboopiamasession".to_string(),
             cwd: "/home/ellie".to_string(),
-            host_id: "test-host".to_string(),
             git_root: None,
         };
 
