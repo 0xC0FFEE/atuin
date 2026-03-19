@@ -1023,17 +1023,6 @@ impl State {
                 preview_chunk.width.into(),
                 theme,
             );
-            #[allow(clippy::cast_possible_truncation)]
-            let prefix_width = settings
-                .ui
-                .columns
-                .iter()
-                .take_while(|col| !col.expand)
-                .map(|col| col.width + 1)
-                .sum::<u16>()
-                + " > ".len() as u16;
-            #[allow(clippy::cast_possible_truncation)]
-            let min_prefix_width = "[ SRCH: FULLTXT ] ".len() as u16;
             self.draw_preview(
                 f,
                 style,
@@ -1041,7 +1030,7 @@ impl State {
                 compactness,
                 preview_chunk,
                 preview,
-                std::cmp::max(prefix_width, min_prefix_width),
+                theme,
             );
         }
     }
@@ -1055,9 +1044,9 @@ impl State {
         compactness: Compactness,
         preview_chunk: Rect,
         preview: Paragraph,
-        prefix_width: u16,
+        theme: &Theme,
     ) {
-        let input = self.build_input(style, prefix_width);
+        let input = self.build_input(style, theme);
         f.render_widget(input, input_chunk);
 
         f.render_widget(preview, preview_chunk);
@@ -1068,11 +1057,7 @@ impl State {
             Compactness::Full => 1,
             _ => 0,
         };
-        f.set_cursor_position((
-            // Put cursor past the end of the input text
-            input_chunk.x + extra_width as u16 + prefix_width + cursor_offset,
-            input_chunk.y + cursor_offset,
-        ));
+        f.set_cursor_position((input_chunk.x + extra_width as u16 + 2 + cursor_offset, input_chunk.y + cursor_offset));
     }
 
     fn build_title(&self, theme: &Theme) -> Paragraph<'_> {
@@ -1183,20 +1168,26 @@ impl State {
         }
     }
 
-    fn build_input(&self, style: StyleState, prefix_width: u16) -> Paragraph<'_> {
-        let (pref, mode) = if self.switched_search_mode {
-            (" SRCH:", self.search_mode.as_str())
+    fn build_input(&self, style: StyleState, theme: &Theme) -> Paragraph<'_> {
+        let mode = if self.switched_search_mode {
+            format!("(srch: {})", self.search_mode.as_str().to_lowercase())
         } else if self.search.custom_context.is_some() {
-            (" CTX:", self.search.filter_mode.as_str())
+            format!("(ctx: {})", self.search.filter_mode.as_str().to_lowercase())
         } else {
-            ("", self.search.filter_mode.as_str())
+            format!("({})", self.search.filter_mode.as_str().to_lowercase())
         };
-        // 3: surrounding "[" "] "
-        let mode_width = usize::from(prefix_width) - pref.len() - 3;
-        // sanity check to ensure we don't exceed the layout limits
-        debug_assert!(mode_width >= mode.len(), "mode name '{mode}' is too long!");
-        let input = format!("[{pref}{mode:^mode_width$}] {}", self.search.input.as_str(),);
-        let input = Paragraph::new(input);
+        let prompt_style = Style::from_crossterm(theme.as_style(Meaning::SearchPrompt));
+        let query_style = Style::from_crossterm(theme.as_style(Meaning::Base));
+        let muted_style = Style::from_crossterm(theme.as_style(Meaning::SearchMode))
+            .add_modifier(Modifier::DIM);
+        let spans = vec![
+            Span::styled("> ", prompt_style),
+            Span::styled(self.search.input.as_str(), query_style),
+            Span::styled(" <", prompt_style),
+            Span::raw(" "),
+            Span::styled(mode, muted_style),
+        ];
+        let input = Paragraph::new(Text::from(Line::from(spans)));
         match style.compactness {
             Compactness::Full => {
                 if style.invert {

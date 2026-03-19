@@ -29,6 +29,12 @@ pub enum Meaning {
     Base,
     Guidance,
     Important,
+    SearchCommand,
+    SearchMode,
+    SearchPrompt,
+    SearchSelectedIndicator,
+    SearchSelectedText,
+    SearchSelectedBg,
     Title,
     Muted,
 }
@@ -253,6 +259,12 @@ static MEANING_FALLBACKS: LazyLock<HashMap<Meaning, Meaning>> = LazyLock::new(||
     HashMap::from([
         (Meaning::Guidance, Meaning::AlertInfo),
         (Meaning::Annotation, Meaning::AlertInfo),
+        (Meaning::SearchCommand, Meaning::Base),
+        (Meaning::SearchMode, Meaning::Muted),
+        (Meaning::SearchPrompt, Meaning::Guidance),
+        (Meaning::SearchSelectedIndicator, Meaning::SearchPrompt),
+        (Meaning::SearchSelectedText, Meaning::Important),
+        (Meaning::SearchSelectedBg, Meaning::Muted),
         (Meaning::Title, Meaning::Important),
     ])
 });
@@ -289,6 +301,42 @@ static DEFAULT_THEME: LazyLock<Theme> = LazyLock::new(|| {
                     Attributes::from(Attribute::Bold),
                 ),
             ),
+            (
+                Meaning::SearchCommand,
+                StyleFactory::from_fg_color(Color::Grey),
+            ),
+            (
+                Meaning::SearchMode,
+                StyleFactory::from_fg_color(Color::DarkGrey),
+            ),
+            (
+                Meaning::SearchPrompt,
+                StyleFactory::from_fg_color(Color::Rgb {
+                    r: 0x2a,
+                    g: 0xc3,
+                    b: 0xde,
+                }),
+            ),
+            (
+                Meaning::SearchSelectedIndicator,
+                StyleFactory::from_fg_color(Color::Rgb {
+                    r: 0xff,
+                    g: 0x00,
+                    b: 0x7c,
+                }),
+            ),
+            (
+                Meaning::SearchSelectedText,
+                StyleFactory::from_fg_color(Color::White),
+            ),
+            (
+                Meaning::SearchSelectedBg,
+                StyleFactory::from_fg_color(Color::Rgb {
+                    r: 0x2e,
+                    g: 0x3c,
+                    b: 0x64,
+                }),
+            ),
             (Meaning::Muted, StyleFactory::from_fg_color(Color::Grey)),
             (Meaning::Base, ContentStyle::default()),
         ]),
@@ -307,6 +355,12 @@ static BUILTIN_THEMES: LazyLock<HashMap<&'static str, Theme>> = LazyLock::new(||
                 (Meaning::Annotation, ContentStyle::default()),
                 (Meaning::Guidance, ContentStyle::default()),
                 (Meaning::Important, ContentStyle::default()),
+                (Meaning::SearchCommand, ContentStyle::default()),
+                (Meaning::SearchMode, ContentStyle::default()),
+                (Meaning::SearchPrompt, ContentStyle::default()),
+                (Meaning::SearchSelectedIndicator, ContentStyle::default()),
+                (Meaning::SearchSelectedText, ContentStyle::default()),
+                (Meaning::SearchSelectedBg, ContentStyle::default()),
                 (Meaning::Muted, ContentStyle::default()),
                 (Meaning::Base, ContentStyle::default()),
             ]),

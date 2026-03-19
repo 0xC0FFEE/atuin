@@ -230,8 +230,13 @@ enter_accept = true
 ## There are some built-in themes, including the base theme ("default"),
 ## "autumn" and "marine". You can add your own themes to the "./themes" subdirectory of your
 ## Atuin config (or ATUIN_THEME_DIR, if provided) as TOML files whose keys should be one or
-## more of AlertInfo, AlertWarn, AlertError, Annotation, Base, Guidance, Important, and
-## the string values as lowercase entries from this list:
+## more of AlertInfo, AlertWarn, AlertError, Annotation, Base, Guidance, Important, Muted,
+## SearchCommand, SearchMode, SearchPrompt, SearchSelectedBg, SearchSelectedIndicator, SearchSelectedText,
+## and the string values as lowercase entries from this list:
+## SearchCommand colors the unselected command text, SearchPrompt colors the `>` / `<` prompt,
+## SearchMode colors the trailing mode label, SearchSelectedBg colors the selected row background,
+## SearchSelectedText colors the selected command text, and SearchSelectedIndicator colors the left
+## selection bar.
 ##    https://ogeon.github.io/docs/palette/master/palette/named/index.html
 ## If you provide a custom theme file, it should be  called "NAME.toml" and the theme below
 ## should be the stem, i.e. `theme = "NAME"` for your chosen NAME.

@@ -53,11 +53,15 @@ struct SelectionPalette {
 }
 
 impl SelectionPalette {
-    fn selected_row() -> Self {
+    fn from_theme(theme: &Theme) -> Self {
+        let selected_bg = Style::from_crossterm(theme.as_style(Meaning::SearchSelectedBg));
+        let selected_text = Style::from_crossterm(theme.as_style(Meaning::SearchSelectedText));
+        let selected_indicator =
+            Style::from_crossterm(theme.as_style(Meaning::SearchSelectedIndicator));
         Self {
-            row_bg: Some(Color::Rgb(0x2e, 0x3c, 0x64)),
-            row_fg: Some(Color::Rgb(0xff, 0xff, 0xff)),
-            indicator_fg: Some(Color::Rgb(0xff, 0x00, 0x7c)),
+            row_bg: selected_bg.fg,
+            row_fg: selected_text.fg,
+            indicator_fg: selected_indicator.fg,
         }
     }
 }
@@ -154,7 +158,7 @@ impl<'a> HistoryList<'a> {
             history_highlighter,
             show_numeric_shortcuts,
             columns,
-            selection: SelectionPalette::selected_row(),
+            selection: SelectionPalette::from_theme(theme),
         }
     }
 
@@ -194,6 +198,13 @@ struct DrawState<'a> {
     selection: SelectionPalette,
 }
 
+#[derive(Clone, Copy)]
+enum SelectionStyle {
+    Background,
+    Text,
+    Indicator,
+}
+
 // these encode the slices of `" > "`, `" {n} "`, or `"   "` in a compact form.
 // Yes, this is a hack, but it makes me feel happy
 static SLICES: &str = " > 1 2 3 4 5 6 7 8 9   ";
@@ -218,11 +229,11 @@ impl DrawState<'_> {
             .width
             .saturating_sub(indicator_width + fixed_width);
 
-        let style = self.theme.as_style(Meaning::Base);
+        let style = self.theme.as_style(Meaning::SearchCommand);
         // Render each configured column
         for (idx, column) in self.columns.iter().enumerate() {
             if idx != 0 {
-                self.draw(" ", Style::from_crossterm(style), false);
+                self.draw(" ", Style::from_crossterm(style), SelectionStyle::Background);
             }
             let width = if column.expand {
                 expand_width
@@ -247,7 +258,7 @@ impl DrawState<'_> {
             let i = self.y as usize + self.state.offset;
             let is_selected = i == self.state.selected();
             let prompt: &str = if is_selected { self.indicator } else { "   " };
-            self.draw(prompt, Style::default(), true);
+            self.draw(prompt, Style::default(), SelectionStyle::Indicator);
             return;
         }
 
@@ -262,7 +273,7 @@ impl DrawState<'_> {
         } else {
             &SLICES[i..i + 3]
         };
-        self.draw(prompt, Style::default(), true);
+        self.draw(prompt, Style::default(), SelectionStyle::Indicator);
     }
 
     fn duration(&mut self, h: &History, width: u16) {
@@ -276,7 +287,7 @@ impl DrawState<'_> {
         let w = width as usize;
         // Right-align duration within its column width, plus trailing space
         let display = format!("{formatted:>w$}");
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     fn time(&mut self, h: &History, width: u16) {
@@ -295,11 +306,11 @@ impl DrawState<'_> {
         let time_str = format!("{time} ago");
 
         let display = format!("{time_str:>w$}");
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     fn command(&mut self, h: &History) {
-        let style = self.theme.as_style(Meaning::Base);
+        let style = self.theme.as_style(Meaning::SearchCommand);
 
         let highlight_indices = self.history_highlighter.get_highlight_indices(
             h.command
@@ -312,7 +323,7 @@ impl DrawState<'_> {
         let mut pos = 0;
         for section in h.command.escape_control().split_ascii_whitespace() {
             if pos != 0 {
-                self.draw(" ", Style::from_crossterm(style), false);
+                self.draw(" ", Style::from_crossterm(style), SelectionStyle::Background);
             }
             for ch in section.chars() {
                 if self.x > self.list_area.width {
@@ -325,7 +336,7 @@ impl DrawState<'_> {
                     style.attributes.set(style::Attribute::Bold);
                 }
                 let s = ch.to_string();
-                self.draw(&s, Style::from_crossterm(style), false);
+                self.draw(&s, Style::from_crossterm(style), SelectionStyle::Text);
                 pos += s.len();
             }
             pos += 1;
@@ -345,7 +356,7 @@ impl DrawState<'_> {
             .unwrap_or_else(|_| "????-??-?? ??:??".to_string());
         let w = width as usize;
         let display = format!("{formatted:w$}");
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     /// Render the directory column (working directory, truncated)
@@ -362,7 +373,7 @@ impl DrawState<'_> {
         } else {
             format!("{cwd:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     /// Render the host column (just the hostname)
@@ -379,7 +390,7 @@ impl DrawState<'_> {
         } else {
             format!("{host:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     /// Render the user column
@@ -396,7 +407,7 @@ impl DrawState<'_> {
         } else {
             format!("{user:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
     /// Render the exit code column
@@ -408,10 +419,10 @@ impl DrawState<'_> {
         };
         let w = width as usize;
         let display = format!("{:>w$}", h.exit);
-        self.draw(&display, Style::from_crossterm(style), false);
+        self.draw(&display, Style::from_crossterm(style), SelectionStyle::Background);
     }
 
-    fn draw(&mut self, s: &str, mut style: Style, skip_selected_reverse: bool) {
+    fn draw(&mut self, s: &str, mut style: Style, selection_style: SelectionStyle) {
         let is_selected = self.y as usize + self.state.offset == self.state.selected;
         let cx = self.list_area.left() + self.x;
 
@@ -422,20 +433,21 @@ impl DrawState<'_> {
         };
 
         if is_selected {
-            if skip_selected_reverse {
-                if let Some(indicator_fg) = self.selection.indicator_fg {
-                    style = style.fg(indicator_fg);
+            if let Some(row_bg) = self.selection.row_bg {
+                style = style.bg(row_bg);
+            }
+            match selection_style {
+                SelectionStyle::Indicator => {
+                    if let Some(indicator_fg) = self.selection.indicator_fg {
+                        style = style.fg(indicator_fg);
+                    }
                 }
-                if let Some(row_bg) = self.selection.row_bg {
-                    style = style.bg(row_bg);
+                SelectionStyle::Text => {
+                    if let Some(row_fg) = self.selection.row_fg {
+                        style = style.fg(row_fg);
+                    }
                 }
-            } else {
-                if let Some(row_bg) = self.selection.row_bg {
-                    style = style.bg(row_bg);
-                }
-                if let Some(row_fg) = self.selection.row_fg {
-                    style = style.fg(row_fg);
-                }
+                SelectionStyle::Background => {}
             }
         }
 
