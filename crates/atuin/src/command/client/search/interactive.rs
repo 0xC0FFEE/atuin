@@ -868,7 +868,6 @@ impl State {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(0)
-            .horizontal_margin(1)
             .constraints::<&[Constraint]>(
                 if invert {
                     [
