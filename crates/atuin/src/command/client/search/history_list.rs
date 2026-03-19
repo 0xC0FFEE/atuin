@@ -14,7 +14,7 @@ use ratatui::{
     buffer::Buffer,
     crossterm::style,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, StatefulWidget, Widget},
 };
 use time::OffsetDateTime;
@@ -35,8 +35,6 @@ pub struct HistoryList<'a> {
     history: &'a [History],
     block: Option<Block<'a>>,
     inverted: bool,
-    /// Apply an alternative highlighting to the selected row
-    alternate_highlight: bool,
     now: &'a dyn Fn() -> OffsetDateTime,
     indicator: &'a str,
     theme: &'a Theme,
@@ -44,6 +42,24 @@ pub struct HistoryList<'a> {
     show_numeric_shortcuts: bool,
     /// Columns to display (in order, after the indicator)
     columns: &'a [UiColumn],
+    selection: SelectionPalette,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SelectionPalette {
+    row_bg: Option<Color>,
+    row_fg: Option<Color>,
+    indicator_fg: Option<Color>,
+}
+
+impl SelectionPalette {
+    fn selected_row() -> Self {
+        Self {
+            row_bg: Some(Color::Rgb(0x2e, 0x3c, 0x64)),
+            row_fg: Some(Color::Rgb(0xff, 0xff, 0xff)),
+            indicator_fg: Some(Color::Rgb(0xff, 0x00, 0x7c)),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -97,13 +113,13 @@ impl StatefulWidget for HistoryList<'_> {
             y: 0,
             state,
             inverted: self.inverted,
-            alternate_highlight: self.alternate_highlight,
             now: &self.now,
             indicator: self.indicator,
             theme: self.theme,
             history_highlighter: self.history_highlighter,
             show_numeric_shortcuts: self.show_numeric_shortcuts,
             columns: self.columns,
+            selection: self.selection,
         };
 
         for item in self.history.iter().skip(state.offset).take(end - start) {
@@ -121,7 +137,6 @@ impl<'a> HistoryList<'a> {
     pub fn new(
         history: &'a [History],
         inverted: bool,
-        alternate_highlight: bool,
         now: &'a dyn Fn() -> OffsetDateTime,
         indicator: &'a str,
         theme: &'a Theme,
@@ -133,13 +148,13 @@ impl<'a> HistoryList<'a> {
             history,
             block: None,
             inverted,
-            alternate_highlight,
             now,
             indicator,
             theme,
             history_highlighter,
             show_numeric_shortcuts,
             columns,
+            selection: SelectionPalette::selected_row(),
         }
     }
 
@@ -170,13 +185,13 @@ struct DrawState<'a> {
     y: u16,
     state: &'a ListState,
     inverted: bool,
-    alternate_highlight: bool,
     now: &'a dyn Fn() -> OffsetDateTime,
     indicator: &'a str,
     theme: &'a Theme,
     history_highlighter: HistoryHighlighter<'a>,
     show_numeric_shortcuts: bool,
     columns: &'a [UiColumn],
+    selection: SelectionPalette,
 }
 
 // these encode the slices of `" > "`, `" {n} "`, or `"   "` in a compact form.
@@ -207,7 +222,7 @@ impl DrawState<'_> {
         // Render each configured column
         for (idx, column) in self.columns.iter().enumerate() {
             if idx != 0 {
-                self.draw(" ", Style::from_crossterm(style));
+                self.draw(" ", Style::from_crossterm(style), false);
             }
             let width = if column.expand {
                 expand_width
@@ -232,7 +247,7 @@ impl DrawState<'_> {
             let i = self.y as usize + self.state.offset;
             let is_selected = i == self.state.selected();
             let prompt: &str = if is_selected { self.indicator } else { "   " };
-            self.draw(prompt, Style::default());
+            self.draw(prompt, Style::default(), true);
             return;
         }
 
@@ -247,7 +262,7 @@ impl DrawState<'_> {
         } else {
             &SLICES[i..i + 3]
         };
-        self.draw(prompt, Style::default());
+        self.draw(prompt, Style::default(), true);
     }
 
     fn duration(&mut self, h: &History, width: u16) {
@@ -261,7 +276,7 @@ impl DrawState<'_> {
         let w = width as usize;
         // Right-align duration within its column width, plus trailing space
         let display = format!("{formatted:>w$}");
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     fn time(&mut self, h: &History, width: u16) {
@@ -280,19 +295,11 @@ impl DrawState<'_> {
         let time_str = format!("{time} ago");
 
         let display = format!("{time_str:>w$}");
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     fn command(&mut self, h: &History) {
-        let mut style = self.theme.as_style(Meaning::Base);
-        let mut row_highlighted = false;
-        if !self.alternate_highlight && (self.y as usize + self.state.offset == self.state.selected)
-        {
-            row_highlighted = true;
-            // if not applying alternative highlighting to the whole row, color the command
-            style = self.theme.as_style(Meaning::AlertError);
-            style.attributes.set(style::Attribute::Bold);
-        }
+        let style = self.theme.as_style(Meaning::Base);
 
         let highlight_indices = self.history_highlighter.get_highlight_indices(
             h.command
@@ -305,7 +312,7 @@ impl DrawState<'_> {
         let mut pos = 0;
         for section in h.command.escape_control().split_ascii_whitespace() {
             if pos != 0 {
-                self.draw(" ", Style::from_crossterm(style));
+                self.draw(" ", Style::from_crossterm(style), false);
             }
             for ch in section.chars() {
                 if self.x > self.list_area.width {
@@ -315,15 +322,10 @@ impl DrawState<'_> {
                 }
                 let mut style = style;
                 if highlight_indices.contains(&pos) {
-                    if row_highlighted {
-                        // if the row is highlighted bold is not enough as the whole row is bold
-                        // change the color too
-                        style = self.theme.as_style(Meaning::AlertWarn);
-                    }
                     style.attributes.set(style::Attribute::Bold);
                 }
                 let s = ch.to_string();
-                self.draw(&s, Style::from_crossterm(style));
+                self.draw(&s, Style::from_crossterm(style), false);
                 pos += s.len();
             }
             pos += 1;
@@ -343,7 +345,7 @@ impl DrawState<'_> {
             .unwrap_or_else(|_| "????-??-?? ??:??".to_string());
         let w = width as usize;
         let display = format!("{formatted:w$}");
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     /// Render the directory column (working directory, truncated)
@@ -360,7 +362,7 @@ impl DrawState<'_> {
         } else {
             format!("{cwd:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     /// Render the host column (just the hostname)
@@ -377,7 +379,7 @@ impl DrawState<'_> {
         } else {
             format!("{host:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     /// Render the user column
@@ -394,7 +396,7 @@ impl DrawState<'_> {
         } else {
             format!("{user:w$}")
         };
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
     /// Render the exit code column
@@ -406,10 +408,11 @@ impl DrawState<'_> {
         };
         let w = width as usize;
         let display = format!("{:>w$}", h.exit);
-        self.draw(&display, Style::from_crossterm(style));
+        self.draw(&display, Style::from_crossterm(style), false);
     }
 
-    fn draw(&mut self, s: &str, mut style: Style) {
+    fn draw(&mut self, s: &str, mut style: Style, skip_selected_reverse: bool) {
+        let is_selected = self.y as usize + self.state.offset == self.state.selected;
         let cx = self.list_area.left() + self.x;
 
         let cy = if self.inverted {
@@ -418,9 +421,22 @@ impl DrawState<'_> {
             self.list_area.bottom() - self.y - 1
         };
 
-        if self.alternate_highlight && (self.y as usize + self.state.offset == self.state.selected)
-        {
-            style = style.add_modifier(Modifier::REVERSED);
+        if is_selected {
+            if skip_selected_reverse {
+                if let Some(indicator_fg) = self.selection.indicator_fg {
+                    style = style.fg(indicator_fg);
+                }
+                if let Some(row_bg) = self.selection.row_bg {
+                    style = style.bg(row_bg);
+                }
+            } else {
+                if let Some(row_bg) = self.selection.row_bg {
+                    style = style.bg(row_bg);
+                }
+                if let Some(row_fg) = self.selection.row_fg {
+                    style = style.fg(row_fg);
+                }
+            }
         }
 
         let w = (self.list_area.width - self.x) as usize;

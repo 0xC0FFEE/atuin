@@ -948,24 +948,7 @@ impl State {
         let stats_tab = self.build_stats(theme);
         f.render_widget(stats_tab, header_chunks[2]);
 
-        let indicator: String = match compactness {
-            Compactness::Ultracompact => {
-                if self.switched_search_mode {
-                    format!("S{}>", self.search_mode.as_str().chars().next().unwrap())
-                } else if self.search.custom_context.is_some() {
-                    format!(
-                        "C{}>",
-                        self.search.filter_mode.as_str().chars().next().unwrap()
-                    )
-                } else {
-                    format!(
-                        "{}> ",
-                        self.search.filter_mode.as_str().chars().next().unwrap()
-                    )
-                }
-            }
-            _ => " > ".to_string(),
-        };
+        let indicator: String = "▌  ".to_string();
 
         match self.tab_index {
             0 => {
@@ -976,7 +959,6 @@ impl State {
                 let results_list = Self::build_results_list(
                     style,
                     results,
-                    self.keymap_mode,
                     &self.now,
                     indicator.as_str(),
                     theme,
@@ -1163,7 +1145,6 @@ impl State {
     fn build_results_list<'a>(
         style: StyleState,
         results: &'a [History],
-        keymap_mode: KeymapMode,
         now: &'a dyn Fn() -> OffsetDateTime,
         indicator: &'a str,
         theme: &'a Theme,
@@ -1174,7 +1155,6 @@ impl State {
         let results_list = HistoryList::new(
             results,
             style.invert,
-            keymap_mode == KeymapMode::VimNormal,
             now,
             indicator,
             theme,
