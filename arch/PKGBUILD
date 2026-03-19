@@ -1,0 +1,64 @@
+pkgbase=atuin
+pkgname=atuin
+pkgver=1
+pkgrel=1
+pkgdesc='Blazingly fast shell history'
+arch=('x86_64')
+url="https://github.com/0xC0FFEE/$pkgbase"
+license=(MIT)
+depends=(gcc-libs
+         glibc)
+makedepends=(cargo git)
+options=(!lto)
+source=("$pkgbase::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "$srcdir/$pkgbase"
+	local date rev hash
+	date=$(git log -1 --format=%cd --date=format:%Y%m%d)
+	rev=$(git rev-list --count HEAD)
+	hash=$(git rev-parse --short HEAD)
+	printf '%s.r%s.g%s\n' "$date" "$rev" "$hash"
+}
+
+_srcenv () {
+	cd "$srcdir/$pkgbase"
+
+	# Use debug
+	export CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=false
+
+	# Use LTO
+	export CARGO_PROFILE_RELEASE_LTO=true CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+}
+
+prepare() {
+	_srcenv
+
+	cargo fetch --locked --target host-tuple
+	mkdir -p completions/
+}
+
+build() {
+	_srcenv
+	cargo build --release --frozen --all-features
+	for sh in 'bash' 'fish' 'zsh'; do
+		"target/release/$pkgbase" gen-completions -s "$sh" -o completions/
+	done
+}
+
+check() {
+	_srcenv
+	cargo test --frozen --all-features --workspace --lib
+}
+
+package_atuin() {
+	cd "$srcdir/$pkgbase"
+	optdepends=('bash-preexec: bash integration')
+	install -Dm0755 -t "$pkgdir/usr/bin/" "target/release/$pkgname"
+	install -Dm0644 "completions/$pkgname.bash" "$pkgdir/usr/share/bash-completion/completions/$pkgname"
+	install -Dm0644 -t "$pkgdir/usr/share/fish/vendor_completions.d/" "completions/$pkgname.fish"
+	install -Dm0644 -t "$pkgdir/usr/share/zsh/site-functions/" "completions/_$pkgname"
+	install -Dm0644 -t "$pkgdir/usr/share/doc/$pkgname/" README.md
+	install -Dm0644 -t "$pkgdir/usr/share/licenses/$pkgname/" LICENSE
+}
