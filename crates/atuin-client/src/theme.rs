@@ -30,6 +30,7 @@ pub enum Meaning {
     Guidance,
     Important,
     SearchCommand,
+    SearchCounter,
     SearchMode,
     SearchPrompt,
     SearchSelectedIndicator,
@@ -260,6 +261,7 @@ static MEANING_FALLBACKS: LazyLock<HashMap<Meaning, Meaning>> = LazyLock::new(||
         (Meaning::Guidance, Meaning::AlertInfo),
         (Meaning::Annotation, Meaning::AlertInfo),
         (Meaning::SearchCommand, Meaning::Base),
+        (Meaning::SearchCounter, Meaning::Muted),
         (Meaning::SearchMode, Meaning::Muted),
         (Meaning::SearchPrompt, Meaning::Guidance),
         (Meaning::SearchSelectedIndicator, Meaning::SearchPrompt),
@@ -304,6 +306,14 @@ static DEFAULT_THEME: LazyLock<Theme> = LazyLock::new(|| {
             (
                 Meaning::SearchCommand,
                 StyleFactory::from_fg_color(Color::Grey),
+            ),
+            (
+                Meaning::SearchCounter,
+                StyleFactory::from_fg_color(Color::Rgb {
+                    r: 0x8d,
+                    g: 0x99,
+                    b: 0xa6,
+                }),
             ),
             (
                 Meaning::SearchMode,

@@ -1180,10 +1180,13 @@ impl State {
         let query_style = Style::from_crossterm(theme.as_style(Meaning::Base));
         let muted_style = Style::from_crossterm(theme.as_style(Meaning::SearchMode))
             .add_modifier(Modifier::DIM);
+        let counter_style = Style::from_crossterm(theme.as_style(Meaning::SearchCounter));
         let spans = vec![
             Span::styled("> ", prompt_style),
             Span::styled(self.search.input.as_str(), query_style),
             Span::styled(" <", prompt_style),
+            Span::raw(" "),
+            Span::styled(format!("{}/{}", self.results_len, self.history_count), counter_style),
             Span::raw(" "),
             Span::styled(mode, muted_style),
         ];
