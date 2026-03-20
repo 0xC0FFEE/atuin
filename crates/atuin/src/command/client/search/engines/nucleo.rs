@@ -161,8 +161,8 @@ fn fuzzy_search(
     state: &SearchState,
     all_history: &[(History, i32)],
 ) -> Vec<History> {
-    let mut set = Vec::with_capacity(200);
-    let mut ranks = Vec::with_capacity(200);
+    let mut set = Vec::new();
+    let mut ranks = Vec::new();
     let query = state.input.as_str();
     let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let now = OffsetDateTime::now_utc();
@@ -287,12 +287,6 @@ fn fuzzy_search(
                             j += 1;
                         }
 
-                        // keep it limited
-                        if ranks.len() > 200 {
-                            ranks.pop();
-                            set.pop();
-                        }
-
                         break 'insert;
                     }
                     // don't continue if this command has a better score already
@@ -300,11 +294,8 @@ fn fuzzy_search(
                         break 'insert;
                     }
                 }
-
-                if set.len() < 200 {
-                    ranks.push(score);
-                    set.push(history.clone());
-                }
+                ranks.push(score);
+                set.push(history.clone());
             }
         }
     }
