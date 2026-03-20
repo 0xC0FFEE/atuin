@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use async_trait::async_trait;
 use atuin_client::{
@@ -138,8 +138,7 @@ async fn fuzzy_search(
     state: &SearchState,
     all_history: &[(History, i32)],
 ) -> Vec<History> {
-    let mut set = Vec::new();
-    let mut ranks = Vec::new();
+    let mut matches = HashMap::new();
     let query = state.input.as_str();
     let now = OffsetDateTime::now_utc();
 
@@ -232,44 +231,21 @@ async fn fuzzy_search(
 
             // reduce longer durations, raise higher counts, raise matches close to the start
             let score = (-score as f64) * count / path / duration / begin;
-
-            'insert: {
-                // algorithm:
-                // 1. find either the position that this command ranks
-                // 2. find the same command positioned better than our rank.
-                for i in 0..set.len() {
-                    // do we out score the current position?
-                    if ranks[i] > score {
-                        ranks.insert(i, score);
-                        set.insert(i, history.clone());
-                        let mut j = i + 1;
-                        while j < set.len() {
-                            // remove duplicates that have a worse score
-                            if set[j].command == history.command {
-                                ranks.remove(j);
-                                set.remove(j);
-
-                                // break this while loop because there won't be any other
-                                // duplicates.
-                                break;
-                            }
-                            j += 1;
-                        }
-
-                        break 'insert;
+            matches
+                .entry(history.command.clone())
+                .and_modify(|(best_score, best_history): &mut (f64, History)| {
+                    if score < *best_score {
+                        *best_score = score;
+                        *best_history = history.clone();
                     }
-                    // don't continue if this command has a better score already
-                    if set[i].command == history.command {
-                        break 'insert;
-                    }
-                }
-                ranks.push(score);
-                set.push(history.clone());
-            }
+                })
+                .or_insert_with(|| (score, history.clone()));
         }
     }
 
-    set
+    let mut scored: Vec<_> = matches.into_values().collect();
+    scored.sort_by(|(left, _), (right, _)| left.total_cmp(right));
+    scored.into_iter().map(|(_, history)| history).collect()
 }
 
 fn path_dist(a: &Path, b: &Path) -> usize {
