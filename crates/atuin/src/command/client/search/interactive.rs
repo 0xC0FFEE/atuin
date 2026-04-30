@@ -53,6 +53,39 @@ use ratatui::crossterm::event::{
 };
 
 const TAB_TITLES: [&str; 2] = ["Search", "Inspect"];
+const DEFAULT_EVENT_POLL_TIMEOUT_MS: u64 = 250;
+const LOADING_QUERY_POLL_TIMEOUT_MS: u64 = 10;
+
+fn event_poll_timeout(has_query: bool, engine_loading: bool) -> Duration {
+    if has_query && engine_loading {
+        Duration::from_millis(LOADING_QUERY_POLL_TIMEOUT_MS)
+    } else {
+        Duration::from_millis(DEFAULT_EVENT_POLL_TIMEOUT_MS)
+    }
+}
+
+fn record_first_query_update(
+    interactive_started_at: Instant,
+    first_keypress_at: Option<Instant>,
+    first_query_update_applied_at: &mut Option<Instant>,
+    results_len: usize,
+) {
+    if first_query_update_applied_at.is_some() {
+        return;
+    }
+
+    let since_keypress_ms = first_keypress_at
+        .map(|t| t.elapsed().as_millis() as u64)
+        .unwrap_or_default();
+    info!(
+        target: "atuin::search_perf",
+        event = "first_query_update_applied",
+        elapsed_ms = interactive_started_at.elapsed().as_millis() as u64,
+        since_keypress_ms,
+        result_count = results_len as u64
+    );
+    *first_query_update_applied_at = Some(Instant::now());
+}
 
 pub enum InputAction {
     Accept(usize),
@@ -1762,6 +1795,16 @@ pub async fn history(
             preload_finished_at = Some(Instant::now());
         }
 
+        if preload_completed && !app.search.input.as_str().is_empty() {
+            results = app.query_results(&mut db, settings.smart_sort).await?;
+            record_first_query_update(
+                interactive_started_at,
+                first_keypress_at,
+                &mut first_query_update_applied_at,
+                results.len(),
+            );
+        }
+
         terminal.draw(|f| {
             app.draw(
                 f,
@@ -1779,7 +1822,10 @@ pub async fn history(
         let initial_search_mode = app.search_mode;
         let initial_custom_context = app.search.custom_context.clone();
 
-        let event_ready = tokio::task::spawn_blocking(|| event::poll(Duration::from_millis(250)));
+        // Keep the UI responsive while a query is waiting on the background preload.
+        // Without this, a finished preload can sit idle until the next 250ms poll tick.
+        let poll_timeout = event_poll_timeout(!initial_input.is_empty(), app.engine.is_loading());
+        let event_ready = tokio::task::spawn_blocking(move || event::poll(poll_timeout));
 
         tokio::select! {
             event_ready = event_ready => {
@@ -1812,7 +1858,7 @@ pub async fn history(
 
                                 db.delete(entry).await?;
 
-                                app.tab_index  = 0;
+                                app.tab_index = 0;
                             },
                             InputAction::SwitchContext(index) => {
                                 if let Some(index) = index && let Some(entry) = results.get(index) {
@@ -1860,23 +1906,17 @@ pub async fn history(
         let has_query = !app.search.input.as_str().is_empty();
         let loading_query_index = has_query && app.engine.is_loading();
 
-        if ((input_changed || filter_changed || search_mode_changed || context_changed)
-            && !loading_query_index)
-            || (preload_completed && has_query)
+        if (input_changed || filter_changed || search_mode_changed || context_changed)
+            && !loading_query_index
         {
             results = app.query_results(&mut db, settings.smart_sort).await?;
-            if has_query && first_query_update_applied_at.is_none() {
-                let since_keypress_ms = first_keypress_at
-                    .map(|t| t.elapsed().as_millis() as u64)
-                    .unwrap_or_default();
-                info!(
-                    target: "atuin::search_perf",
-                    event = "first_query_update_applied",
-                    elapsed_ms = interactive_started_at.elapsed().as_millis() as u64,
-                    since_keypress_ms,
-                    result_count = results.len() as u64
+            if has_query {
+                record_first_query_update(
+                    interactive_started_at,
+                    first_keypress_at,
+                    &mut first_query_update_applied_at,
+                    results.len(),
                 );
-                first_query_update_applied_at = Some(Instant::now());
             }
         }
 
@@ -3063,5 +3103,21 @@ mod tests {
             matches!(result, super::InputAction::ReturnQuery),
             "Tab configured as return-query should return InputAction::ReturnQuery"
         );
+    }
+
+    #[test]
+    fn event_poll_timeout_is_short_while_query_waits_for_preload() {
+        assert_eq!(
+            super::event_poll_timeout(true, true),
+            std::time::Duration::from_millis(super::LOADING_QUERY_POLL_TIMEOUT_MS)
+        );
+    }
+
+    #[test]
+    fn event_poll_timeout_stays_default_when_no_query_is_blocked() {
+        let expected = std::time::Duration::from_millis(super::DEFAULT_EVENT_POLL_TIMEOUT_MS);
+        assert_eq!(super::event_poll_timeout(false, true), expected);
+        assert_eq!(super::event_poll_timeout(true, false), expected);
+        assert_eq!(super::event_poll_timeout(false, false), expected);
     }
 }
