@@ -1,20 +1,23 @@
-pkgbase=atuin
-pkgname=atuin
+_binname=atuin
+pkgbase=atuin-git
+pkgname=atuin-git
 pkgver=1
 pkgrel=1
 pkgdesc='Blazingly fast shell history'
 arch=('x86_64')
-url="https://github.com/0xC0FFEE/$pkgbase"
+url="https://github.com/0xC0FFEE/$_binname"
 license=(MIT)
 depends=(gcc-libs
          glibc)
 makedepends=(cargo git)
+provides=("$_binname")
+conflicts=("$_binname")
 options=(!lto)
-source=("$pkgbase::git+$url.git")
+source=("$_binname::git+$url.git")
 sha256sums=('SKIP')
 
 pkgver() {
-	cd "$srcdir/$pkgbase"
+	cd "$srcdir/$_binname"
 	local date rev hash
 	date=$(git log -1 --format=%cd --date=format:%Y%m%d)
 	rev=$(git rev-list --count HEAD)
@@ -23,7 +26,7 @@ pkgver() {
 }
 
 _srcenv () {
-	cd "$srcdir/$pkgbase"
+	cd "$srcdir/$_binname"
 
 	# Use debug
 	export CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=false
@@ -43,7 +46,7 @@ build() {
 	_srcenv
 	cargo build --release --frozen --all-features
 	for sh in 'bash' 'fish' 'zsh'; do
-		"target/release/$pkgbase" gen-completions -s "$sh" -o completions/
+		"target/release/$_binname" gen-completions -s "$sh" -o completions/
 	done
 }
 
@@ -52,13 +55,13 @@ check() {
 	cargo test --frozen --all-features --workspace --lib
 }
 
-package_atuin() {
-	cd "$srcdir/$pkgbase"
+package_atuin-git() {
+	cd "$srcdir/$_binname"
 	optdepends=('bash-preexec: bash integration')
-	install -Dm0755 -t "$pkgdir/usr/bin/" "target/release/$pkgname"
-	install -Dm0644 "completions/$pkgname.bash" "$pkgdir/usr/share/bash-completion/completions/$pkgname"
-	install -Dm0644 -t "$pkgdir/usr/share/fish/vendor_completions.d/" "completions/$pkgname.fish"
-	install -Dm0644 -t "$pkgdir/usr/share/zsh/site-functions/" "completions/_$pkgname"
+	install -Dm0755 -t "$pkgdir/usr/bin/" "target/release/$_binname"
+	install -Dm0644 "completions/$_binname.bash" "$pkgdir/usr/share/bash-completion/completions/$_binname"
+	install -Dm0644 -t "$pkgdir/usr/share/fish/vendor_completions.d/" "completions/$_binname.fish"
+	install -Dm0644 -t "$pkgdir/usr/share/zsh/site-functions/" "completions/_$_binname"
 	install -Dm0644 -t "$pkgdir/usr/share/doc/$pkgname/" README.md
 	install -Dm0644 -t "$pkgdir/usr/share/licenses/$pkgname/" LICENSE
 }
