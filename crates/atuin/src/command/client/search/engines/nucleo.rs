@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, sync::Mutex};
+use std::{cmp::Ordering, collections::HashMap, path::Path, sync::Mutex};
 
 use async_trait::async_trait;
 use atuin_client::{
@@ -16,6 +16,10 @@ use tracing::{Level, info, instrument, warn};
 use uuid;
 
 use super::{SearchEngine, SearchState};
+
+// One boundary bonus in fzf/nucleo is 8 points. Grouping by that amount keeps
+// clear fuzzy wins ahead while letting history signals order near-equivalent matches.
+const FUZZY_SCORE_BUCKET_SIZE: u32 = 8;
 
 pub struct Search {
     all_history: Vec<(History, i32)>,
@@ -243,40 +247,77 @@ fn fuzzy_search(
         if let Some(score) = pattern.indices(command, matcher, &mut match_indices) {
             match_indices.sort_unstable();
             match_indices.dedup();
-            let begin = match_indices.first().copied().unwrap_or_default();
-
-            let mut duration = (now - history.timestamp).as_seconds_f64().log2();
-            if !duration.is_finite() || duration <= 1.0 {
-                duration = 1.0;
-            }
-            // these + X.0 just make the log result a bit smoother.
-            // log is very spiky towards 1-4, but I want a gradual decay.
-            // eg:
-            // log2(4) = 2, log2(5) = 2.3 (16% increase)
-            // log2(8) = 3, log2(9) = 3.16 (5% increase)
-            // log2(16) = 4, log2(17) = 4.08 (2% increase)
-            let count = (*count as f64 + 8.0).log2();
-            let begin = (begin as f64 + 16.0).log2();
-            let path = path_dist(history.cwd.as_ref(), state.context.cwd.as_ref());
-            let path = (path as f64 + 8.0).log2();
-
-            // reduce longer durations, raise higher counts, raise matches close to the start
-            let score = (-(score as f64)) * count / path / duration / begin;
+            let scored = ScoredHistory::new(
+                history.clone(),
+                *count,
+                score,
+                now,
+                path_dist(history.cwd.as_ref(), state.context.cwd.as_ref()),
+            );
             matches
                 .entry(history.command.clone())
-                .and_modify(|(best_score, best_history): &mut (f64, History)| {
-                    if score < *best_score {
-                        *best_score = score;
-                        *best_history = history.clone();
+                .and_modify(|best: &mut ScoredHistory| {
+                    if compare_scored(&scored, best).is_lt() {
+                        *best = scored.clone();
                     }
                 })
-                .or_insert_with(|| (score, history.clone()));
+                .or_insert(scored);
         }
     }
 
     let mut scored: Vec<_> = matches.into_values().collect();
-    scored.sort_by(|(left, _), (right, _)| left.total_cmp(right));
-    scored.into_iter().map(|(_, history)| history).collect()
+    scored.sort_by(compare_scored);
+    scored.into_iter().map(|scored| scored.history).collect()
+}
+
+#[derive(Clone)]
+struct ScoredHistory {
+    fuzzy_bucket: u32,
+    fuzzy_score: u32,
+    context_score: f64,
+    count: i32,
+    history: History,
+}
+
+impl ScoredHistory {
+    fn new(
+        history: History,
+        count: i32,
+        fuzzy_score: u32,
+        now: OffsetDateTime,
+        path_distance: usize,
+    ) -> Self {
+        let age_secs = (now - history.timestamp).as_seconds_f64();
+        let age_secs = if age_secs.is_finite() && age_secs > 1.0 {
+            age_secs
+        } else {
+            1.0
+        };
+
+        let recency = 6.0 / age_secs.log2().max(1.0);
+        let frequency = (f64::from(count.max(0)) + 1.0).log2().min(8.0) * 0.35;
+        let locality = 1.5 / (path_distance as f64 + 2.0).log2();
+
+        Self {
+            fuzzy_bucket: fuzzy_score / FUZZY_SCORE_BUCKET_SIZE,
+            fuzzy_score,
+            context_score: recency + frequency + locality,
+            count,
+            history,
+        }
+    }
+}
+
+fn compare_scored(left: &ScoredHistory, right: &ScoredHistory) -> Ordering {
+    right
+        .fuzzy_bucket
+        .cmp(&left.fuzzy_bucket)
+        .then_with(|| right.context_score.total_cmp(&left.context_score))
+        .then_with(|| right.fuzzy_score.cmp(&left.fuzzy_score))
+        .then_with(|| right.history.timestamp.cmp(&left.history.timestamp))
+        .then_with(|| right.count.cmp(&left.count))
+        .then_with(|| left.history.command.len().cmp(&right.history.command.len()))
+        .then_with(|| left.history.command.cmp(&right.history.command))
 }
 
 fn path_dist(a: &Path, b: &Path) -> usize {
@@ -292,4 +333,82 @@ fn path_dist(a: &Path, b: &Path) -> usize {
     }
 
     b.len() - a.len() + dist
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::command::client::search::cursor::Cursor;
+    use atuin_client::database::Context;
+    use time::Duration;
+
+    fn state(query: &str) -> SearchState {
+        SearchState {
+            input: Cursor::from(query.to_owned()),
+            filter_mode: FilterMode::Global,
+            context: Context {
+                session: "session".to_owned(),
+                cwd: "/work/project".to_owned(),
+                hostname: "host".to_owned(),
+                git_root: None,
+            },
+            custom_context: None,
+        }
+    }
+
+    fn history(command: &str, timestamp: OffsetDateTime, cwd: &str) -> History {
+        History {
+            id: command.to_owned().into(),
+            timestamp,
+            duration: 0,
+            exit: 0,
+            command: command.to_owned(),
+            cwd: cwd.to_owned(),
+            session: "session".to_owned(),
+            hostname: "host:user".to_owned(),
+            author: "user".to_owned(),
+            intent: None,
+            deleted_at: None,
+        }
+    }
+
+    #[test]
+    fn fuzzy_quality_wins_over_history_metadata() {
+        let now = OffsetDateTime::now_utc();
+        let all_history = vec![
+            (
+                history("c x a x r x g x o", now - Duration::SECOND, "/work/project"),
+                10_000,
+            ),
+            (
+                history("cargo test", now - Duration::days(90), "/unrelated/project"),
+                1,
+            ),
+        ];
+
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let results = fuzzy_search(&mut matcher, &state("cargo"), &all_history);
+
+        assert_eq!(results[0].command, "cargo test");
+    }
+
+    #[test]
+    fn close_matches_prefer_recent_history() {
+        let now = OffsetDateTime::now_utc();
+        let all_history = vec![
+            (
+                history("git checkout", now - Duration::days(30), "/work/project"),
+                1,
+            ),
+            (
+                history("git commit", now - Duration::SECOND, "/work/project"),
+                1,
+            ),
+        ];
+
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let results = fuzzy_search(&mut matcher, &state("git c"), &all_history);
+
+        assert_eq!(results[0].command, "git commit");
+    }
 }
