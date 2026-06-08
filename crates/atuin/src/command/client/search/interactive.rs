@@ -56,8 +56,8 @@ const TAB_TITLES: [&str; 2] = ["Search", "Inspect"];
 const DEFAULT_EVENT_POLL_TIMEOUT_MS: u64 = 250;
 const LOADING_QUERY_POLL_TIMEOUT_MS: u64 = 10;
 
-fn event_poll_timeout(has_query: bool, engine_loading: bool) -> Duration {
-    if has_query && engine_loading {
+fn event_poll_timeout(engine_loading: bool) -> Duration {
+    if engine_loading {
         Duration::from_millis(LOADING_QUERY_POLL_TIMEOUT_MS)
     } else {
         Duration::from_millis(DEFAULT_EVENT_POLL_TIMEOUT_MS)
@@ -1693,9 +1693,15 @@ pub async fn history(
     let update_needed = tokio::spawn(async move { settings2.needs_update().await }).fuse();
     tokio::pin!(update_needed);
 
+    let history_count = tokio::spawn({
+        let db = db.clone_boxed();
+        async move { db.history_count(false).await.ok() }
+    })
+    .fuse();
+    tokio::pin!(history_count);
+
     let initial_context = current_context().await?;
 
-    let history_count = db.history_count(false).await?;
     let search_mode = if settings.shell_up_key_binding {
         settings
             .search_mode_shell_up_key_binding
@@ -1708,7 +1714,7 @@ pub async fn history(
         .filter(|_| settings.shell_up_key_binding)
         .unwrap_or_else(|| settings.default_filter_mode(initial_context.git_root.is_some()));
     let mut app = State {
-        history_count,
+        history_count: 0,
         results_state: ListState::default(),
         update_needed: false,
         switched_search_mode: false,
@@ -1761,7 +1767,13 @@ pub async fn history(
     let mut first_keypress_at: Option<Instant> = None;
     let mut first_query_update_applied_at: Option<Instant> = None;
 
-    let mut results = app.query_results(&mut db, settings.smart_sort).await?;
+    let skip_initial_empty_query =
+        app.search.input.as_str().is_empty() && app.engine.is_loading();
+    let mut results = if skip_initial_empty_query {
+        Vec::new()
+    } else {
+        app.query_results(&mut db, settings.smart_sort).await?
+    };
 
     if inline_height > 0 && !popup_mode {
         terminal.clear()?;
@@ -1769,6 +1781,7 @@ pub async fn history(
 
     let mut stats: Option<HistoryStats> = None;
     let mut inspecting: Option<History> = None;
+    let mut empty_preload_query_pending = false;
     let accept;
     let result = 'render: loop {
         let was_loading = app.engine.is_loading();
@@ -1795,14 +1808,18 @@ pub async fn history(
             preload_finished_at = Some(Instant::now());
         }
 
-        if preload_completed && !app.search.input.as_str().is_empty() {
-            results = app.query_results(&mut db, settings.smart_sort).await?;
-            record_first_query_update(
-                interactive_started_at,
-                first_keypress_at,
-                &mut first_query_update_applied_at,
-                results.len(),
-            );
+        if preload_completed {
+            if app.search.input.as_str().is_empty() {
+                empty_preload_query_pending = true;
+            } else {
+                results = app.query_results(&mut db, settings.smart_sort).await?;
+                record_first_query_update(
+                    interactive_started_at,
+                    first_keypress_at,
+                    &mut first_query_update_applied_at,
+                    results.len(),
+                );
+            }
         }
 
         terminal.draw(|f| {
@@ -1824,7 +1841,7 @@ pub async fn history(
 
         // Keep the UI responsive while a query is waiting on the background preload.
         // Without this, a finished preload can sit idle until the next 250ms poll tick.
-        let poll_timeout = event_poll_timeout(!initial_input.is_empty(), app.engine.is_loading());
+        let poll_timeout = event_poll_timeout(app.engine.is_loading());
         let event_ready = tokio::task::spawn_blocking(move || event::poll(poll_timeout));
 
         tokio::select! {
@@ -1897,6 +1914,11 @@ pub async fn history(
                 // The update check is a nice-to-have feature, not critical
                 app.update_needed = update_needed.ok().unwrap_or(false);
             }
+            history_count = &mut history_count => {
+                if let Ok(Some(history_count)) = history_count {
+                    app.history_count = history_count;
+                }
+            }
         }
 
         let input_changed = initial_input != app.search.input.as_str();
@@ -1910,6 +1932,7 @@ pub async fn history(
             && !loading_query_index
         {
             results = app.query_results(&mut db, settings.smart_sort).await?;
+            empty_preload_query_pending = false;
             if has_query {
                 record_first_query_update(
                     interactive_started_at,
@@ -1918,6 +1941,11 @@ pub async fn history(
                     results.len(),
                 );
             }
+        } else if empty_preload_query_pending && !has_query && !app.engine.is_loading() {
+            // Prefer any queued input over populating the idle empty-query list.
+            // This keeps startup responsive for the common "open and type" flow.
+            results = app.query_results(&mut db, settings.smart_sort).await?;
+            empty_preload_query_pending = false;
         }
 
         // In custom context mode, when no filter is applied, highlight the entry which was used
