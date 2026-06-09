@@ -17,10 +17,6 @@ use uuid;
 
 use super::{SearchEngine, SearchState};
 
-// One boundary bonus in fzf/nucleo is 8 points. Grouping by that amount keeps
-// clear fuzzy wins ahead while letting history signals order near-equivalent matches.
-const FUZZY_SCORE_BUCKET_SIZE: u32 = 8;
-
 pub struct Search {
     all_history: Vec<(History, i32)>,
     preload: Option<JoinHandle<Vec<(History, i32)>>>,
@@ -32,7 +28,7 @@ pub struct Search {
 
 impl Search {
     pub fn new(settings: &Settings) -> Self {
-        let matcher = Matcher::new(Config::DEFAULT);
+        let matcher = Matcher::new(Config::DEFAULT.match_history());
         Search {
             all_history: vec![],
             preload: None,
@@ -272,7 +268,6 @@ fn fuzzy_search(
 
 #[derive(Clone)]
 struct ScoredHistory {
-    fuzzy_bucket: u32,
     fuzzy_score: u32,
     context_score: f64,
     count: i32,
@@ -297,7 +292,6 @@ impl ScoredHistory {
         let recency = 6.0 / age_secs.log2().max(1.0);
         let frequency = (f64::from(count.max(0)) + 1.0).log2().min(8.0) * 0.35;
         Self {
-            fuzzy_bucket: fuzzy_score / FUZZY_SCORE_BUCKET_SIZE,
             fuzzy_score,
             context_score: recency + frequency + locality,
             count,
@@ -330,10 +324,9 @@ fn locality_score(history_cwds: &str, context: &Context) -> f64 {
 
 fn compare_scored(left: &ScoredHistory, right: &ScoredHistory) -> Ordering {
     right
-        .fuzzy_bucket
-        .cmp(&left.fuzzy_bucket)
+        .fuzzy_score
+        .cmp(&left.fuzzy_score)
         .then_with(|| right.context_score.total_cmp(&left.context_score))
-        .then_with(|| right.fuzzy_score.cmp(&left.fuzzy_score))
         .then_with(|| right.history.timestamp.cmp(&left.history.timestamp))
         .then_with(|| right.count.cmp(&left.count))
         .then_with(|| left.history.command.len().cmp(&right.history.command.len()))
@@ -406,7 +399,7 @@ mod tests {
             ),
         ];
 
-        let mut matcher = Matcher::new(Config::DEFAULT);
+        let mut matcher = Matcher::new(Config::DEFAULT.match_history());
         let results = fuzzy_search(&mut matcher, &state("cargo"), &all_history);
 
         assert_eq!(results[0].command, "cargo test");
@@ -426,9 +419,37 @@ mod tests {
             ),
         ];
 
-        let mut matcher = Matcher::new(Config::DEFAULT);
+        let mut matcher = Matcher::new(Config::DEFAULT.match_history());
         let results = fuzzy_search(&mut matcher, &state("git c"), &all_history);
 
         assert_eq!(results[0].command, "git commit");
+    }
+
+    #[test]
+    fn history_config_lets_context_break_boundary_bonus_tie() {
+        let now = OffsetDateTime::now_utc();
+        let all_history = vec![
+            (
+                history(
+                    "sudo npm list | rg copilot",
+                    now - Duration::days(100),
+                    "unknown",
+                ),
+                1,
+            ),
+            (
+                history(
+                    "sudo npm i -g @github/copilot",
+                    now - Duration::SECOND,
+                    "/work/project",
+                ),
+                15,
+            ),
+        ];
+
+        let mut matcher = Matcher::new(Config::DEFAULT.match_history());
+        let results = fuzzy_search(&mut matcher, &state("npm copilot"), &all_history);
+
+        assert_eq!(results[0].command, "sudo npm i -g @github/copilot");
     }
 }

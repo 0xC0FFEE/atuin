@@ -67,4 +67,43 @@ impl Config {
         self.initial_char_class = CharClass::Delimiter;
         self
     }
+
+    /// Configures the matcher with bonuses appropriate for matching command history.
+    pub fn set_match_history(&mut self) {
+        self.bonus_boundary_white = BONUS_BOUNDARY;
+        self.bonus_boundary_delimiter = BONUS_BOUNDARY;
+    }
+
+    /// Configures the matcher with bonuses appropriate for matching command history.
+    pub const fn match_history(mut self) -> Self {
+        self.bonus_boundary_white = BONUS_BOUNDARY;
+        self.bonus_boundary_delimiter = BONUS_BOUNDARY;
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn match_history_removes_extra_boundary_bonuses() {
+        let config = Config::DEFAULT.match_history();
+
+        assert_eq!(config.bonus_boundary_white, BONUS_BOUNDARY);
+        assert_eq!(config.bonus_boundary_delimiter, BONUS_BOUNDARY);
+        assert_eq!(config.delimiter_chars, Config::DEFAULT.delimiter_chars);
+        assert_eq!(
+            config.initial_char_class,
+            Config::DEFAULT.initial_char_class
+        );
+    }
+
+    #[test]
+    fn set_match_history_removes_extra_boundary_bonuses() {
+        let mut config = Config::DEFAULT;
+        config.set_match_history();
+
+        assert_eq!(config, Config::DEFAULT.match_history());
+    }
 }
