@@ -1,8 +1,8 @@
-use std::{cmp::Ordering, collections::HashMap, path::Path, sync::Mutex};
+use std::{cmp::Ordering, collections::HashMap, sync::Mutex};
 
 use async_trait::async_trait;
 use atuin_client::{
-    database::{Database, all_with_count_rusqlite},
+    database::{Context, Database, all_with_count_rusqlite},
     history::History,
     settings::{FilterMode, Settings},
 };
@@ -252,7 +252,7 @@ fn fuzzy_search(
                 *count,
                 score,
                 now,
-                path_dist(history.cwd.as_ref(), state.context.cwd.as_ref()),
+                locality_score(&history.cwd, &state.context),
             );
             matches
                 .entry(history.command.clone())
@@ -285,7 +285,7 @@ impl ScoredHistory {
         count: i32,
         fuzzy_score: u32,
         now: OffsetDateTime,
-        path_distance: usize,
+        locality: f64,
     ) -> Self {
         let age_secs = (now - history.timestamp).as_seconds_f64();
         let age_secs = if age_secs.is_finite() && age_secs > 1.0 {
@@ -296,8 +296,6 @@ impl ScoredHistory {
 
         let recency = 6.0 / age_secs.log2().max(1.0);
         let frequency = (f64::from(count.max(0)) + 1.0).log2().min(8.0) * 0.35;
-        let locality = 1.5 / (path_distance as f64 + 2.0).log2();
-
         Self {
             fuzzy_bucket: fuzzy_score / FUZZY_SCORE_BUCKET_SIZE,
             fuzzy_score,
@@ -306,6 +304,28 @@ impl ScoredHistory {
             history,
         }
     }
+}
+
+fn locality_score(history_cwds: &str, context: &Context) -> f64 {
+    let git_root = context.git_root.as_ref().and_then(|path| path.to_str());
+    let mut in_workspace = false;
+
+    for cwd in history_cwds.split(':') {
+        if cwd == context.cwd {
+            return 1.5;
+        }
+
+        if let Some(git_root) = git_root
+            && (cwd == git_root
+                || cwd
+                    .strip_prefix(git_root)
+                    .is_some_and(|suffix| suffix.starts_with('/')))
+        {
+            in_workspace = true;
+        }
+    }
+
+    if in_workspace { 0.75 } else { 0.0 }
 }
 
 fn compare_scored(left: &ScoredHistory, right: &ScoredHistory) -> Ordering {
@@ -320,26 +340,12 @@ fn compare_scored(left: &ScoredHistory, right: &ScoredHistory) -> Ordering {
         .then_with(|| left.history.command.cmp(&right.history.command))
 }
 
-fn path_dist(a: &Path, b: &Path) -> usize {
-    let mut a: Vec<_> = a.components().collect();
-    let b: Vec<_> = b.components().collect();
-
-    let mut dist = 0;
-
-    // pop a until there's a common ancestor
-    while !b.starts_with(&a) {
-        dist += 1;
-        a.pop();
-    }
-
-    b.len() - a.len() + dist
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::command::client::search::cursor::Cursor;
     use atuin_client::database::Context;
+    use std::path::PathBuf;
     use time::Duration;
 
     fn state(query: &str) -> SearchState {
@@ -370,6 +376,20 @@ mod tests {
             intent: None,
             deleted_at: None,
         }
+    }
+
+    #[test]
+    fn locality_score_is_binary_for_cwd_and_workspace() {
+        let context = Context {
+            session: "session".to_owned(),
+            cwd: "/work/project".to_owned(),
+            hostname: "host".to_owned(),
+            git_root: Some(PathBuf::from("/work/project")),
+        };
+
+        assert_eq!(locality_score("/tmp:/work/project", &context), 1.5);
+        assert_eq!(locality_score("/work/project/crates/atuin", &context), 0.75);
+        assert_eq!(locality_score("/work/projectile", &context), 0.0);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 _binname=atuin
 pkgbase=atuin-git
 pkgname=atuin-git
-pkgver=1
+pkgver=20260506.r1702.g5f19e29
 pkgrel=1
 pkgdesc='Blazingly fast shell history'
 arch=('x86_64')
